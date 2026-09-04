@@ -10,15 +10,23 @@ mod config;
 use std::sync::Mutex;
 
 use serde_json::json;
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tokio_util::sync::CancellationToken;
 
 /// 房间连接状态（内部维护，对外通过 room-status 事件同步）
 #[derive(Clone, Copy, PartialEq)]
-enum RoomStatus {
+pub(crate) enum RoomStatus {
     Disconnected,
     Connecting { room_id: u32 },
     Connected { room_id: u32 },
+}
+
+/// B 站 WebSocket 认证成功后由 client 回调，同步内部状态机
+pub(crate) fn on_room_connected(app: &AppHandle, room_id: u32) {
+    let st = app.state::<AppState>();
+    *st.status.lock().unwrap() = RoomStatus::Connected { room_id };
 }
 
 struct AppState {
@@ -187,6 +195,22 @@ fn overlay_set_size(app: AppHandle, width: f64, height: f64) -> Result<(), Strin
     let win = overlay_window(&app).ok_or("Overlay 窗口未创建")?;
     win.set_size(tauri::LogicalSize::new(width, height))
         .map_err(|e| format!("调整尺寸失败: {e}"))
+}
+
+/// 查询当前连接状态（Overlay 轮询兑底，防事件丢失）
+#[tauri::command]
+fn get_connection_status(app: AppHandle) -> serde_json::Value {
+    let st = app.state::<AppState>();
+    let st = st.status.lock().unwrap();
+    match *st {
+        RoomStatus::Disconnected => json!({ "state": "disconnected" }),
+        RoomStatus::Connecting { room_id } => {
+            json!({ "state": "connecting", "roomId": room_id })
+        }
+        RoomStatus::Connected { room_id } => {
+            json!({ "state": "connected", "roomId": room_id })
+        }
+    }
 }
 
 #[tauri::command]
@@ -408,6 +432,68 @@ pub fn run() {
                     flush_overlay_bounds(&app3);
                 }
             });
+
+            // 主窗口 × → 最小化到托盘（不退出；由托盘菜单唤出/退出）
+            if let Some(main_win) = app.get_webview_window("main") {
+                let app2 = app.handle().clone();
+                main_win.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = app2.get_webview_window("main").map(|w| w.hide());
+                    }
+                });
+            }
+
+            // 系统托盘：左键单击显示设置窗口
+            let show_item = MenuItem::with_id(app, "show", "显示设置", true, None::<&str>)
+                .map_err(|e| eprintln!("[tray] 创建菜单项失败: {e}"))
+                .ok();
+            let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)
+                .map_err(|e| eprintln!("[tray] 创建菜单项失败: {e}"))
+                .ok();
+            let mut items: Vec<&dyn tauri::menu::IsMenuItem<_>> = Vec::new();
+            if let Some(i) = &show_item {
+                items.push(i);
+            }
+            if let Some(i) = &quit_item {
+                items.push(i);
+            }
+            if let Ok(menu) = Menu::with_items(app, &items) {
+                let tray = TrayIconBuilder::with_id("main-tray")
+                    .icon(app.default_window_icon().expect("default window icon").clone())
+                    .menu(&menu)
+                    .show_menu_on_left_click(false)
+                    .on_menu_event(|app, event| match event.id().as_ref() {
+                        "show" => {
+                            if let Some(w) = app.get_webview_window("main") {
+                                let _ = w.show();
+                                let _ = w.unminimize();
+                                let _ = w.set_focus();
+                            }
+                        }
+                        "quit" => app.exit(0),
+                        _ => {}
+                    })
+                    .on_tray_icon_event(|tray, event| {
+                        if let TrayIconEvent::Click {
+                            button: MouseButton::Left,
+                            button_state: MouseButtonState::Up,
+                            ..
+                        } = event
+                        {
+                            let app = tray.app_handle();
+                            if let Some(w) = app.get_webview_window("main") {
+                                let _ = w.show();
+                                let _ = w.unminimize();
+                                let _ = w.set_focus();
+                            }
+                        }
+                    })
+                    .build(app)
+                    .map_err(|e| eprintln!("[tray] 创建托盘失败: {e}"))
+                    .ok();
+                let _ = tray; // 托盘由 tauri 管理，持有即保活
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -429,6 +515,7 @@ pub fn run() {
             overlay_get_boundary,
             overlay_get_size,
             overlay_set_size,
+            get_connection_status,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

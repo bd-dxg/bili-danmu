@@ -342,6 +342,8 @@ fn handle_frame(app: &tauri::AppHandle, room_id: u32, data: &[u8]) -> Result<(),
                 if code != 0 {
                     return Err(format!("B 站认证失败 code={code}"));
                 }
+                // 同步内部状态机（供 get_connection_status / 轮询查询真实状态）
+                crate::on_room_connected(app, room_id);
                 // 认证成功：同步状态给前端
                 let _ = app.emit(
                     "room-status",

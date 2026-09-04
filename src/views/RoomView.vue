@@ -1,23 +1,17 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
+import { onMounted, onUnmounted, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { RoomStatusEvent, DanmakuEvent } from "../types/ipc";
+import type { RoomStatusEvent } from "../types/ipc";
 import { refreshLogin, useLogin } from "../composables/useLogin";
+import { DEFAULT_ROOM_ID } from "../constants";
 
 const { loggedIn, uid, openLoginDialog, logout } = useLogin();
-
-const roomId = ref<number | null>(null);
 const busy = ref(false); // 连接/断开操作中
 const status = ref<RoomStatusEvent>({ state: "disconnected" });
 const errorMsg = ref("");
-/** 弹幕预览（M2 验证用，M4 由 Overlay 渲染替代） */
-const danmakuList = ref<DanmakuEvent[]>([]);
-
-const MAX_PREVIEW = 50;
 
 let unlistenStatus: UnlistenFn | undefined;
-let unlistenDanmaku: UnlistenFn | undefined;
 
 const statusText: Record<string, string> = {
   disconnected: "未连接",
@@ -27,23 +21,11 @@ const statusText: Record<string, string> = {
   error: "连接失败",
 };
 
-function pushDanmaku(d: DanmakuEvent) {
-  danmakuList.value.push(d);
-  if (danmakuList.value.length > MAX_PREVIEW) {
-    danmakuList.value.splice(0, danmakuList.value.length - MAX_PREVIEW);
-  }
-}
-
 async function connect() {
-  const id = roomId.value;
-  if (id === null || !Number.isInteger(id) || id <= 0) {
-    errorMsg.value = "请输入有效的直播间 ID";
-    return;
-  }
   errorMsg.value = "";
   busy.value = true;
   try {
-    await invoke("connect_room", { roomId: id });
+    await invoke("connect_room", { roomId: DEFAULT_ROOM_ID });
   } catch (e) {
     status.value = { state: "error", message: String(e) };
   } finally {
@@ -55,13 +37,27 @@ async function disconnect() {
   busy.value = true;
   try {
     await invoke("disconnect_room");
-    danmakuList.value = [];
   } catch (e) {
     errorMsg.value = String(e);
   } finally {
     busy.value = false;
   }
 }
+
+// 退出登录：先断开直播连接，再清登录态（登录是收弹幕的前提）
+async function handleLogout() {
+  if (status.value.state === "connected" || status.value.state === "connecting") {
+    await disconnect();
+  }
+  await logout();
+}
+
+// 登录完成 → 自动连接锁定直播间（仅当当前未连接时）
+watch(loggedIn, async (now, prev) => {
+  if (now && !prev && status.value.state === "disconnected") {
+    await connect();
+  }
+});
 
 onMounted(async () => {
   await refreshLogin();
@@ -71,14 +67,10 @@ onMounted(async () => {
       errorMsg.value = "";
     }
   });
-  unlistenDanmaku = await listen<DanmakuEvent>("danmaku", (e) => {
-    pushDanmaku(e.payload);
-  });
 });
 
 onUnmounted(() => {
   unlistenStatus?.();
-  unlistenDanmaku?.();
 });
 </script>
 
@@ -87,7 +79,7 @@ onUnmounted(() => {
     <div class="login-bar" :class="{ logged: loggedIn }">
       <template v-if="loggedIn">
         <span class="ok">✓ 已登录（UID {{ uid }}）</span>
-        <button class="link-btn" @click="logout()">退出登录</button>
+        <button class="link-btn" @click="handleLogout">退出登录</button>
       </template>
       <template v-else>
         <span class="warn">⚠ 未登录，B 站需要登录才能接收弹幕</span>
@@ -99,12 +91,10 @@ onUnmounted(() => {
 
     <div class="row">
       <input
-        v-model.number="roomId"
+        :value="DEFAULT_ROOM_ID"
         class="room-input"
         type="number"
-        placeholder="直播间 ID，如 123456"
-        :disabled="status.state === 'connected' || status.state === 'connecting'"
-        @keydown.enter="connect"
+        disabled
       />
       <button
         v-if="status.state === 'connected'"
@@ -138,17 +128,6 @@ onUnmounted(() => {
       <span v-if="status.state === 'error' && status.message" class="room-tag">
         {{ status.message }}
       </span>
-    </div>
-
-    <div class="danmaku-preview">
-      <h3>实时弹幕预览 <span class="count">{{ danmakuList.length }}</span></h3>
-      <div v-if="danmakuList.length === 0" class="empty">暂无弹幕，连接直播间后自动显示</div>
-      <ul class="danmaku-list">
-        <li v-for="d in danmakuList" :key="d.id" class="danmaku-item">
-          <span class="user">{{ d.username }}</span>
-          <span class="content" :style="d.color ? { color: d.color } : {}">：{{ d.content }}</span>
-        </li>
-      </ul>
     </div>
   </div>
 </template>
@@ -219,6 +198,14 @@ h2 {
   border-color: var(--accent);
 }
 
+.room-input:disabled {
+  background: var(--hover);
+  color: var(--text-faint);
+  border-color: var(--border);
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+
 .btn {
   border: none;
   border-radius: 6px;
@@ -284,51 +271,5 @@ h2 {
 .room-tag {
   color: var(--text-faint);
   font-size: 12px;
-}
-
-.danmaku-preview {
-  margin-top: 26px;
-  border-top: 1px solid var(--border);
-  padding-top: 14px;
-}
-
-.danmaku-preview h3 {
-  font-size: 14px;
-  margin-bottom: 10px;
-  color: var(--text);
-}
-
-.danmaku-preview .count {
-  color: var(--text-faint);
-  font-size: 12px;
-  font-weight: normal;
-}
-
-.empty {
-  color: var(--text-faint);
-  font-size: 13px;
-  padding: 12px 0;
-}
-
-.danmaku-list {
-  list-style: none;
-  max-height: 340px;
-  overflow-y: auto;
-}
-
-.danmaku-item {
-  padding: 3px 0;
-  font-size: 13px;
-  line-height: 1.5;
-  word-break: break-all;
-}
-
-.danmaku-item .user {
-  font-weight: 600;
-  color: var(--text-faint);
-}
-
-.danmaku-item .content {
-  color: var(--text);
 }
 </style>

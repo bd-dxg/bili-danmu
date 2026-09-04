@@ -12,6 +12,8 @@ interface DisplayDanmaku extends DanmakuEvent {
 const danmakuList = ref<DisplayDanmaku[]>([]);
 const showBoundary = ref(false);
 const currentRoomId = ref(0);
+// 连接状态（空窗时显示初始化提示，避免无界面窗口）
+const connState = ref<"disconnected" | "connected">("disconnected");
 // 弹幕样式（字号/字体/是否用原色）
 const style = ref<OverlayStyle>({
   font_size: 17,
@@ -45,6 +47,48 @@ const rowShadow = computed(() => {
 });
 const MAX_ITEMS = 120;
 
+/** 连接状态 → 界面状态（事件与轮询共用，去重） */
+function applyConnStatus(st: RoomStatusEvent) {
+  if (st.state === "connected") {
+    const was = connState.value === "connected";
+    const prevRoom = currentRoomId.value;
+    connState.value = "connected";
+    currentRoomId.value = st.roomId;
+    // 进入（或换房）时：清空旧提示并以系统行提示入场
+    if (!was || prevRoom !== st.roomId) {
+      danmakuList.value = [];
+      pushSystem(`已进入直播间 ${st.roomId}，等待弹幕…`);
+    }
+  } else if (st.state === "connecting") {
+    if (connState.value !== "connecting") {
+      connState.value = "connecting";
+      danmakuList.value = [];
+      pushSystem("连接中…");
+    }
+  } else {
+    if (connState.value !== "disconnected") {
+      connState.value = "disconnected";
+      danmakuList.value = [];
+      pushSystem("未连接 · 请在主界面连接直播间");
+    }
+  }
+}
+
+/** 推送系统提示行（无用户名，纯文本，与弹幕同样式） */
+function pushSystem(text: string) {
+  const list = danmakuList.value;
+  list.push({
+    id: `sys-${Date.now()}-${list.length}`,
+    username: "",
+    content: text,
+    timestamp: Date.now() / 1000,
+    is_admin: false,
+  });
+  if (list.length > MAX_ITEMS) {
+    list.splice(0, list.length - MAX_ITEMS);
+  }
+}
+
 let unlistenDanmu: UnlistenFn | undefined;
 let unlistenRoom: UnlistenFn | undefined;
 let unlistenStyle: UnlistenFn | undefined;
@@ -67,12 +111,7 @@ function rolesOf(d: DisplayDanmaku): { label: string; cls: string }[] {
 
 onMounted(async () => {
   unlistenRoom = await listen<RoomStatusEvent>("room-status", (e) => {
-    if (e.state === "connected") {
-      currentRoomId.value = e.roomId;
-    } else {
-      // 断开/连接中/失败：清空弹幕，避免旧房间内容残留
-      danmakuList.value = [];
-    }
+    applyConnStatus(e.payload);
   });
   unlistenDanmu = await listen<DanmakuEvent>("danmaku", (e) => {
     const d = e.payload as DisplayDanmaku;
@@ -103,6 +142,18 @@ onMounted(async () => {
   } catch {
     /* ignore */
   }
+  // 轮询兑底：事件丢失时也能同步连接状态（每 2s）
+  const poll = async () => {
+    try {
+      const st = await invoke<RoomStatusEvent>("get_connection_status");
+      applyConnStatus(st);
+    } catch {
+      /* overlay 独立打开等场景忽略 */
+    }
+  };
+  await poll();
+  const timer = setInterval(poll, 2000);
+  onUnmounted(() => clearInterval(timer));
 });
 
 onUnmounted(() => {
@@ -152,14 +203,16 @@ onUnmounted(() => {
           {{ d.medal_name }}{{ d.medal_level ?? 0 }}
         </span>
       </template>
-      <span
-        class="user"
-        :style="{
-          color: style.username_color,
-          fontWeight: style.bold ? 800 : 600,
-        }"
-        data-tauri-drag-region
-      >{{ d.username }}：</span>
+      <template v-if="d.username">
+        <span
+          class="user"
+          :style="{
+            color: style.username_color,
+            fontWeight: style.bold ? 800 : 600,
+          }"
+          data-tauri-drag-region
+        >{{ d.username }}：</span>
+      </template>
       <span
         class="content"
         :style="{
