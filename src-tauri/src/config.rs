@@ -110,13 +110,6 @@ pub fn save_config(app: &AppHandle, cfg: &ConfigFile) -> Result<(), String> {
     std::fs::write(&path, content).map_err(|e| format!("写入配置文件失败: {e}"))
 }
 
-/// 读取登录态
-pub fn load_auth(app: &AppHandle) -> Option<AuthInfo> {
-    load_config(app)
-        .auth
-        .filter(|a| !a.cookies.is_empty())
-}
-
 /// 保存登录态
 pub fn save_auth(app: &AppHandle, auth: &AuthInfo) -> Result<(), String> {
     let mut cfg = load_config(app);
@@ -143,9 +136,4 @@ pub fn save_overlay_bounds(app: &AppHandle, bounds: &WindowBounds) -> Result<(),
     let mut cfg = load_config(app);
     cfg.overlay_bounds = Some(*bounds);
     save_config(app, &cfg)
-}
-
-/// 读取 Overlay 窗口位置大小
-pub fn load_overlay_bounds(app: &AppHandle) -> Option<WindowBounds> {
-    load_config(app).overlay_bounds
 }

@@ -11,13 +11,11 @@
 //! ```
 
 pub const OP_HEARTBEAT: u32 = 2;
-pub const OP_HEARTBEAT_REPLY: u32 = 3;
 pub const OP_MESSAGE: u32 = 5;
 pub const OP_AUTH: u32 = 7;
 pub const OP_AUTH_REPLY: u32 = 8;
 
 pub const PROTO_JSON: u16 = 0;
-pub const PROTO_POPULARITY: u16 = 1;
 pub const PROTO_ZLIB: u16 = 2;
 pub const PROTO_BROTLI: u16 = 3;
 
