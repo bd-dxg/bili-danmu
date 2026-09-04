@@ -14,7 +14,7 @@ const navs: { key: NavKey; label: string }[] = [
   { key: "room", label: "直播间" },
   { key: "danmaku", label: "弹幕" },
   { key: "tts", label: "朗读" },
-  { key: "overlay", label: "Overlay" },
+  { key: "overlay", label: "悬浮窗" },
   { key: "about", label: "关于" },
 ];
 

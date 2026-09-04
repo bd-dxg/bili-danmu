@@ -10,7 +10,6 @@ interface DisplayDanmaku extends DanmakuEvent {
 }
 
 const danmakuList = ref<DisplayDanmaku[]>([]);
-const showBoundary = ref(false);
 const currentRoomId = ref(0);
 // 连接状态（空窗时显示初始化提示，避免无界面窗口）
 const connState = ref<"disconnected" | "connected">("disconnected");
@@ -92,7 +91,6 @@ function pushSystem(text: string) {
 let unlistenDanmu: UnlistenFn | undefined;
 let unlistenRoom: UnlistenFn | undefined;
 let unlistenStyle: UnlistenFn | undefined;
-let unlistenBoundary: UnlistenFn | undefined;
 
 /// 身份前缀列表（可叠加）：舰/提督/总督 + 房，按身份高低排序
 function rolesOf(d: DisplayDanmaku): { label: string; cls: string }[] {
@@ -128,17 +126,9 @@ onMounted(async () => {
   unlistenStyle = await listen<OverlayStyle>("overlay-style", (e) => {
     style.value = e.payload;
   });
-  unlistenBoundary = await listen<boolean>("overlay-boundary", (e) => {
-    showBoundary.value = e.payload;
-  });
-  // 初始同步样式与边界开关
+  // 初始同步样式
   try {
     style.value = await invoke<OverlayStyle>("overlay_get_style");
-  } catch {
-    /* ignore */
-  }
-  try {
-    showBoundary.value = await invoke<boolean>("overlay_get_boundary");
   } catch {
     /* ignore */
   }
@@ -160,14 +150,12 @@ onUnmounted(() => {
   unlistenDanmu?.();
   unlistenRoom?.();
   unlistenStyle?.();
-  unlistenBoundary?.();
 });
 </script>
 
 <template>
   <div
     class="overlay-root"
-    :class="{ 'show-boundary': showBoundary }"
     :style="{
       fontSize: style.font_size + 'px',
       fontFamily: style.font_family,
@@ -236,13 +224,6 @@ onUnmounted(() => {
   overflow: hidden;
   background: transparent;
   user-select: none;
-}
-
-/* 穿透关闭时（可交互）显示窗口边界：粗双层圈，任意背景可见 */
-.overlay-root.show-boundary {
-  box-shadow:
-    0 0 0 2px rgba(0, 0, 0, 0.9),
-    0 0 0 4px rgba(255, 255, 255, 0.95);
 }
 
 /* 弹幕行：文本流式布局（名字与内容连续，超宽自然断行，不撕裂） */

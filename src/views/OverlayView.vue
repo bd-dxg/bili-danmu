@@ -5,7 +5,6 @@ import { invoke } from "@tauri-apps/api/core";
 const visible = ref(false);
 const clickthrough = ref(true);
 const alwaysOnTop = ref(true);
-const boundary = ref(false);
 const loading = ref(true);
 const errorMsg = ref("");
 
@@ -39,18 +38,10 @@ async function toggleTop() {
   if (v !== null) alwaysOnTop.value = v;
 }
 
-async function toggleBoundary() {
-  const v = await wrap(() =>
-    invoke("overlay_set_boundary", { show: !boundary.value }),
-  );
-  if (v !== null) boundary.value = v;
-}
-
 onMounted(async () => {
   try {
     visible.value = await invoke<boolean>("overlay_is_visible");
     clickthrough.value = await invoke<boolean>("overlay_get_clickthrough");
-    boundary.value = await invoke<boolean>("overlay_get_boundary");
   } catch (e) {
     errorMsg.value = String(e);
   } finally {
@@ -61,12 +52,12 @@ onMounted(async () => {
 
 <template>
   <div class="overlay-page">
-    <h2>Overlay 悬浮窗</h2>
+    <h2>悬浮窗</h2>
 
     <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
 
     <div class="toggle-row">
-      <span class="label">显示 Overlay</span>
+      <span class="label">是否启用</span>
       <button class="btn" :class="visible ? 'on' : 'off'" @click="toggleVisible">
         {{ visible ? "开" : "关" }}
       </button>
@@ -84,13 +75,6 @@ onMounted(async () => {
     </div>
 
     <div class="toggle-row">
-      <span class="label">显示边界参考线</span>
-      <button class="btn" :class="boundary ? 'on' : 'off'" @click="toggleBoundary">
-        {{ boundary ? "开" : "关" }}
-      </button>
-    </div>
-
-    <div class="toggle-row">
       <span class="label">始终置顶</span>
       <button
         class="btn"
@@ -103,9 +87,8 @@ onMounted(async () => {
 
     <div class="tips">
       <p>1. 连接直播间后，Overlay 自动显示收到的弹幕</p>
-      <p>2. "显示边界参考线"开启后弹幕窗四周有黑白圈，方便拖拽/调整大小</p>
-      <p>3. 关闭鼠标穿透后，可在 Overlay 上按住拖动窗口，边缘可调整大小</p>
-      <p>4. 开启穿透后，鼠标点击会直接落到 Overlay 下方的窗口</p>
+      <p>2. 关闭鼠标穿透后，可在 Overlay 上按住拖动窗口，边缘可调整大小</p>
+      <p>3. 开启穿透后，鼠标点击会直接落到 Overlay 下方的窗口</p>
     </div>
   </div>
 </template>

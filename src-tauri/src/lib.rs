@@ -41,8 +41,6 @@ struct AppState {
 struct OverlayState {
     clickthrough: Mutex<bool>,
     style: Mutex<config::OverlayStyle>,
-    /// 显示窗口边界参考线（独立开关，方便拖拽/调整）
-    boundary: Mutex<bool>,
     /// 窗口当前位置大小（内存态，由 flush 周期/退出时落盘）
     bounds: Mutex<Option<config::WindowBounds>>,
     /// 已落盘的位置大小（去重，避免无变化时反复写盘）
@@ -54,7 +52,6 @@ impl Default for OverlayState {
         Self {
             clickthrough: Mutex::new(false),
             style: Mutex::new(config::OverlayStyle::default()),
-            boundary: Mutex::new(false),
             bounds: Mutex::new(None),
             saved_bounds: Mutex::new(None),
         }
@@ -118,8 +115,6 @@ fn overlay_set_clickthrough(
     win.set_ignore_cursor_events(enabled)
         .map_err(|e| format!("设置穿透失败: {e}"))?;
     *state.clickthrough.lock().unwrap() = enabled;
-    // 广播给 Overlay 页面：穿透关闭时显示窗口边界虚线，方便拖拽/调整
-    let _ = app.emit("overlay-clickthrough", enabled);
     Ok(enabled)
 }
 
@@ -161,24 +156,6 @@ fn overlay_set_style(
     *state.style.lock().unwrap() = style.clone();
     let _ = app.emit("overlay-style", &style);
     config::save_overlay_style(&app, &style)
-}
-
-/// 开关显示边界参考线（广播给 Overlay 页面）
-#[tauri::command]
-fn overlay_set_boundary(
-    app: AppHandle,
-    state: State<'_, OverlayState>,
-    show: bool,
-) -> Result<bool, String> {
-    *state.boundary.lock().unwrap() = show;
-    let _ = app.emit("overlay-boundary", show);
-    Ok(show)
-}
-
-/// 查询边界参考线状态
-#[tauri::command]
-fn overlay_get_boundary(state: State<'_, OverlayState>) -> bool {
-    *state.boundary.lock().unwrap()
 }
 
 /// 查询 Overlay 当前尺寸（逻辑像素）
@@ -520,8 +497,6 @@ pub fn run() {
             overlay_set_always_on_top,
             overlay_get_style,
             overlay_set_style,
-            overlay_set_boundary,
-            overlay_get_boundary,
             overlay_get_size,
             overlay_set_size,
             get_connection_status,
