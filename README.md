@@ -154,4 +154,10 @@ src-tauri/src/          Rust 核心
 └── lib.rs              窗口控制、托盘、Tauri 命令
 ```
 
+## License
+
+本项目以 [GNU GPL v3](LICENSE) 开源。
+
+实现参考了 [DanmuFree](https://github.com/SoraYjy/DanmuFree)（MIT License © SoraYjy），其协议与 WBI 签名实现源自该项目，特此声明致谢。
+
 
