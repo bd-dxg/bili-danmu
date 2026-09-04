@@ -1,7 +1,6 @@
-//! 本地配置读写（V1 最小实现：仅持久化 B 站登录 Cookie）
+//! 本地配置读写（JSON，位于 Windows 应用数据目录，如 %APPDATA%\com.bilidanmu.app\config.json）
 //!
-//! 配置文件位于 Windows 应用数据目录（如 %APPDATA%\com.bilidanmu.app\config.json）
-//! M6 将扩展为完整应用配置（窗口位置、字体、TTS 等）
+//! 字段随里程碑扩展：M2 登录 Cookie；M4 Overlay 弹幕样式。M6 扩展完整应用配置。
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -16,10 +15,68 @@ pub struct AuthInfo {
     pub cookies: String,
 }
 
+/// Overlay 弹幕样式（M4）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct OverlayStyle {
+    /// 弹幕字号（px）
+    pub font_size: f64,
+    /// 字体族
+    pub font_family: String,
+    /// 是否显示荣耀等级徽章
+    pub show_wealth: bool,
+    /// 是否显示粉丝牌
+    pub show_medal: bool,
+    /// 是否显示舰长/房管身份前缀
+    pub show_role: bool,
+    /// 用户名颜色（#RRGGBB）
+    pub username_color: String,
+    /// 弹幕内容颜色（#RRGGBB）
+    pub content_color: String,
+    /// 文字加粗
+    pub bold: bool,
+    /// 是否文字描边
+    pub outline: bool,
+    /// 描边颜色（#RRGGBB）
+    pub outline_color: String,
+    /// 描边宽度（px 近似值）
+    pub outline_width: f64,
+}
+
+impl Default for OverlayStyle {
+    fn default() -> Self {
+        Self {
+            font_size: 17.0,
+            font_family: "Microsoft YaHei UI".into(),
+            show_wealth: true,
+            show_medal: true,
+            show_role: true,
+            username_color: "#FFFFFF".into(),
+            content_color: "#FFFFFF".into(),
+            bold: false,
+            outline: true,
+            outline_color: "#000000".into(),
+            outline_width: 2.0,
+        }
+    }
+}
+
+/// Overlay 窗口位置大小（M3.5，逻辑坐标）
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct WindowBounds {
+    pub x: f64,
+    pub y: f64,
+    pub w: f64,
+    pub h: f64,
+}
+
 /// 配置文件结构（后续里程碑扩展字段）
 #[derive(Debug, Default, Serialize, Deserialize)]
-struct ConfigFile {
-    auth: Option<AuthInfo>,
+#[serde(default)]
+pub struct ConfigFile {
+    pub auth: Option<AuthInfo>,
+    pub overlay_style: OverlayStyle,
+    pub overlay_bounds: Option<WindowBounds>,
 }
 
 fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -30,34 +87,65 @@ fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join("config.json"))
 }
 
-/// 从磁盘加载登录态
-pub fn load_auth(app: &AppHandle) -> Option<AuthInfo> {
-    let path = config_path(app).ok()?;
-    let content = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str::<ConfigFile>(&content)
-        .ok()?
-        .auth
-        .filter(|a| !a.cookies.is_empty())
+/// 读取配置文件（不存在/损坏返回默认）
+pub fn load_config(app: &AppHandle) -> ConfigFile {
+    let path = match config_path(app) {
+        Ok(p) => p,
+        Err(_) => return ConfigFile::default(),
+    };
+    match std::fs::read_to_string(path) {
+        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
+        Err(_) => ConfigFile::default(),
+    }
 }
 
-/// 保存登录态到磁盘
-pub fn save_auth(app: &AppHandle, auth: &AuthInfo) -> Result<(), String> {
+/// 保存配置文件
+pub fn save_config(app: &AppHandle, cfg: &ConfigFile) -> Result<(), String> {
     let path = config_path(app)?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("创建配置目录失败: {e}"))?;
     }
-    let content = serde_json::to_string_pretty(&ConfigFile {
-        auth: Some(auth.clone()),
-    })
-    .map_err(|e| format!("序列化配置失败: {e}"))?;
+    let content =
+        serde_json::to_string_pretty(cfg).map_err(|e| format!("序列化配置失败: {e}"))?;
     std::fs::write(&path, content).map_err(|e| format!("写入配置文件失败: {e}"))
+}
+
+/// 读取登录态
+pub fn load_auth(app: &AppHandle) -> Option<AuthInfo> {
+    load_config(app)
+        .auth
+        .filter(|a| !a.cookies.is_empty())
+}
+
+/// 保存登录态
+pub fn save_auth(app: &AppHandle, auth: &AuthInfo) -> Result<(), String> {
+    let mut cfg = load_config(app);
+    cfg.auth = Some(auth.clone());
+    save_config(app, &cfg)
 }
 
 /// 清除登录态
 pub fn clear_auth(app: &AppHandle) -> Result<(), String> {
-    let path = config_path(app)?;
-    if path.exists() {
-        std::fs::remove_file(&path).map_err(|e| format!("删除配置文件失败: {e}"))?;
-    }
-    Ok(())
+    let mut cfg = load_config(app);
+    cfg.auth = None;
+    save_config(app, &cfg)
+}
+
+/// 保存 Overlay 样式
+pub fn save_overlay_style(app: &AppHandle, style: &OverlayStyle) -> Result<(), String> {
+    let mut cfg = load_config(app);
+    cfg.overlay_style = style.clone();
+    save_config(app, &cfg)
+}
+
+/// 保存 Overlay 窗口位置大小
+pub fn save_overlay_bounds(app: &AppHandle, bounds: &WindowBounds) -> Result<(), String> {
+    let mut cfg = load_config(app);
+    cfg.overlay_bounds = Some(*bounds);
+    save_config(app, &cfg)
+}
+
+/// 读取 Overlay 窗口位置大小
+pub fn load_overlay_bounds(app: &AppHandle) -> Option<WindowBounds> {
+    load_config(app).overlay_bounds
 }

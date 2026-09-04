@@ -10,7 +10,7 @@ mod config;
 use std::sync::Mutex;
 
 use serde_json::json;
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tokio_util::sync::CancellationToken;
 
 /// 房间连接状态（内部维护，对外通过 room-status 事件同步）
@@ -29,7 +29,166 @@ struct AppState {
     auth: Mutex<Option<config::AuthInfo>>,
 }
 
-/// IPC 自检命令
+/// Overlay 窗口状态（供 UI 同步开关与弹幕样式）
+struct OverlayState {
+    clickthrough: Mutex<bool>,
+    style: Mutex<config::OverlayStyle>,
+    /// 显示窗口边界参考线（独立开关，方便拖拽/调整）
+    boundary: Mutex<bool>,
+    /// 窗口当前位置大小（内存态，由 flush 周期/退出时落盘）
+    bounds: Mutex<Option<config::WindowBounds>>,
+    /// 已落盘的位置大小（去重，避免无变化时反复写盘）
+    saved_bounds: Mutex<Option<config::WindowBounds>>,
+}
+
+impl Default for OverlayState {
+    fn default() -> Self {
+        Self {
+            clickthrough: Mutex::new(false),
+            style: Mutex::new(config::OverlayStyle::default()),
+            boundary: Mutex::new(false),
+            bounds: Mutex::new(None),
+            saved_bounds: Mutex::new(None),
+        }
+    }
+}
+
+/// 读取窗口当前矩形 → 更新内存态
+fn capture_overlay_bounds(app: &AppHandle) {
+    let Some(win) = overlay_window(app) else { return };
+    let Ok(pos) = win.outer_position() else { return };
+    let Ok(size) = win.inner_size() else { return };
+    let b = config::WindowBounds {
+        x: pos.x as f64,
+        y: pos.y as f64,
+        w: size.width as f64,
+        h: size.height as f64,
+    };
+    let st = app.state::<OverlayState>();
+    *st.bounds.lock().unwrap() = Some(b);
+}
+
+/// 内存态位置与已保存不同则写盘（去重）
+fn flush_overlay_bounds(app: &AppHandle) {
+    let st = app.state::<OverlayState>();
+    let current = *st.bounds.lock().unwrap();
+    if current.is_none() {
+        return;
+    }
+    let saved = *st.saved_bounds.lock().unwrap();
+    if current != saved {
+        let _ = config::save_overlay_bounds(app, &current.unwrap());
+        *st.saved_bounds.lock().unwrap() = current;
+    }
+}
+
+/// 获取 Overlay 窗口实例（不存在返回 None）
+fn overlay_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
+    app.get_webview_window("overlay")
+}
+
+/// 显示 / 隐藏 Overlay（返回新可见状态）
+#[tauri::command]
+fn overlay_set_visible(app: AppHandle, visible: bool) -> Result<bool, String> {
+    let win = overlay_window(&app).ok_or("Overlay 窗口未创建")?;
+    if visible {
+        win.show().map_err(|e| format!("显示失败: {e}"))?;
+    } else {
+        win.hide().map_err(|e| format!("隐藏失败: {e}"))?;
+    }
+    Ok(visible)
+}
+
+/// 开关鼠标穿透（核心桌面功能：开启后鼠标事件穿透 Overlay 落到下层窗口）
+#[tauri::command]
+fn overlay_set_clickthrough(
+    app: AppHandle,
+    state: State<'_, OverlayState>,
+    enabled: bool,
+) -> Result<bool, String> {
+    let win = overlay_window(&app).ok_or("Overlay 窗口未创建")?;
+    win.set_ignore_cursor_events(enabled)
+        .map_err(|e| format!("设置穿透失败: {e}"))?;
+    *state.clickthrough.lock().unwrap() = enabled;
+    // 广播给 Overlay 页面：穿透关闭时显示窗口边界虚线，方便拖拽/调整
+    let _ = app.emit("overlay-clickthrough", enabled);
+    Ok(enabled)
+}
+
+/// 查询当前穿透状态
+#[tauri::command]
+fn overlay_get_clickthrough(state: State<'_, OverlayState>) -> bool {
+    *state.clickthrough.lock().unwrap()
+}
+
+/// 查询 Overlay 是否可见
+#[tauri::command]
+fn overlay_is_visible(app: AppHandle) -> bool {
+    overlay_window(&app)
+        .and_then(|w| w.is_visible().ok())
+        .unwrap_or(false)
+}
+
+/// 开关始终置顶
+#[tauri::command]
+fn overlay_set_always_on_top(app: AppHandle, enabled: bool) -> Result<bool, String> {
+    let win = overlay_window(&app).ok_or("Overlay 窗口未创建")?;
+    win.set_always_on_top(enabled)
+        .map_err(|e| format!("设置置顶失败: {e}"))?;
+    Ok(enabled)
+}
+/// 读取当前 Overlay 弹幕样式
+#[tauri::command]
+fn overlay_get_style(state: State<'_, OverlayState>) -> config::OverlayStyle {
+    state.style.lock().unwrap().clone()
+}
+
+/// 更新 Overlay 弹幕样式：广播给 Overlay 窗口并持久化
+#[tauri::command]
+fn overlay_set_style(
+    app: AppHandle,
+    state: State<'_, OverlayState>,
+    style: config::OverlayStyle,
+) -> Result<(), String> {
+    *state.style.lock().unwrap() = style.clone();
+    let _ = app.emit("overlay-style", &style);
+    config::save_overlay_style(&app, &style)
+}
+
+/// 开关显示边界参考线（广播给 Overlay 页面）
+#[tauri::command]
+fn overlay_set_boundary(
+    app: AppHandle,
+    state: State<'_, OverlayState>,
+    show: bool,
+) -> Result<bool, String> {
+    *state.boundary.lock().unwrap() = show;
+    let _ = app.emit("overlay-boundary", show);
+    Ok(show)
+}
+
+/// 查询边界参考线状态
+#[tauri::command]
+fn overlay_get_boundary(state: State<'_, OverlayState>) -> bool {
+    *state.boundary.lock().unwrap()
+}
+
+/// 查询 Overlay 当前尺寸（逻辑像素）
+#[tauri::command]
+fn overlay_get_size(app: AppHandle) -> Result<serde_json::Value, String> {
+    let win = overlay_window(&app).ok_or("Overlay 窗口未创建")?;
+    let size = win.inner_size().map_err(|e| format!("读取尺寸失败: {e}"))?;
+    Ok(json!({ "width": size.width, "height": size.height }))
+}
+
+/// 调整 Overlay 宽高（设置页滑块调用；尺寸变化自动被窗口事件捕获落盘）
+#[tauri::command]
+fn overlay_set_size(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
+    let win = overlay_window(&app).ok_or("Overlay 窗口未创建")?;
+    win.set_size(tauri::LogicalSize::new(width, height))
+        .map_err(|e| format!("调整尺寸失败: {e}"))
+}
+
 #[tauri::command]
 fn ping() -> String {
     "pong".into()
@@ -185,22 +344,70 @@ fn spawn_connection(
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .manage(AppState {
             status: Mutex::new(RoomStatus::Disconnected),
             cancel: Mutex::new(None),
             auth: Mutex::new(None),
         })
+        .manage(OverlayState::default())
         .setup(|app| {
-            // 恢复本地登录态
-            let loaded = config::load_auth(app.handle());
-            if let Some(auth) = &loaded {
+            // 加载持久化配置：登录态 → AppState.auth；样式/位置 → OverlayState
+            let cfg = config::load_config(app.handle());
+            if let Some(auth) = &cfg.auth {
                 let st = app.state::<AppState>();
                 *st.auth.lock().unwrap() = Some(auth.clone());
                 eprintln!("[auth] 已恢复登录态 uid={}", auth.uid);
             } else {
                 eprintln!("[auth] 未登录（游客态收不到弹幕，请扫码登录）");
             }
+            {
+                let ov = app.state::<OverlayState>();
+                *ov.style.lock().unwrap() = cfg.overlay_style.clone();
+            }
+
+            // Overlay：透明 / 无边框 / 置顶 / 可调整 / 跳过任务栏，恢复上次位置
+            let mut win_builder = WebviewWindowBuilder::new(
+                app,
+                "overlay",
+                WebviewUrl::App("overlay.html".into()),
+            )
+            .title("bili-danmu overlay")
+            .inner_size(480.0, 240.0)
+            .position(80.0, 80.0)
+            .decorations(false)
+            .transparent(true)
+            .always_on_top(true)
+            .resizable(true)
+            .min_inner_size(120.0, 40.0)
+            .skip_taskbar(true)
+            .shadow(false);
+            if let Some(b) = cfg.overlay_bounds {
+                win_builder = win_builder.position(b.x, b.y).inner_size(b.w, b.h);
+            }
+            if let Ok(win) = win_builder.build() {
+                let app2 = app.handle().clone();
+                win.on_window_event(move |event| {
+                    if matches!(
+                        event,
+                        tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_)
+                    ) {
+                        capture_overlay_bounds(&app2);
+                    }
+                });
+            } else {
+                eprintln!("[overlay] 创建失败");
+            }
+            // 周期落盘窗口位置（拖动/缩放中去重保存）
+            let app3 = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let mut interval =
+                    tokio::time::interval(std::time::Duration::from_secs(2));
+                loop {
+                    interval.tick().await;
+                    flush_overlay_bounds(&app3);
+                }
+            });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -211,7 +418,25 @@ pub fn run() {
             qr_generate,
             qr_poll,
             logout,
+            overlay_set_visible,
+            overlay_set_clickthrough,
+            overlay_get_clickthrough,
+            overlay_is_visible,
+            overlay_set_always_on_top,
+            overlay_get_style,
+            overlay_set_style,
+            overlay_set_boundary,
+            overlay_get_boundary,
+            overlay_get_size,
+            overlay_set_size,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    // 退出前落盘 Overlay 窗口位置
+    app.run(|handle, event| {
+        if let tauri::RunEvent::Exit = event {
+            flush_overlay_bounds(handle);
+        }
+    });
 }

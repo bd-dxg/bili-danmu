@@ -124,12 +124,47 @@ fn parse_danmaku(v: &serde_json::Value) -> Option<Danmaku> {
 
     let id = format!("{}-{}-{}", timestamp, uid, random);
 
+    // ---- 用户身份（字段位置参考 blivedm DanmakuMessage.from_command） ----
+    // 勋章：info[3] = [等级, 勋章名, 主播名, 勋章房间id, 颜色, ...]，空数组=未佩戴
+    let (medal_level, medal_name, medal_room_id) = match info.get(3).and_then(|m| m.as_array()) {
+        Some(m) if !m.is_empty() => (
+            m.first().and_then(|v| v.as_u64()).map(|v| v as u32),
+            m.get(1).and_then(|v| v.as_str()).map(String::from),
+            m.get(3).and_then(|v| v.as_u64()).map(|v| v as u32),
+        ),
+        _ => (None, None, None),
+    };
+    // 用户等级：info[4] = [等级, ?, 等级颜色, 排名(如 ">50000"), ...]
+    let user_level = info
+        .get(4)
+        .and_then(|l| l.as_array())
+        .and_then(|a| a.first())
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
+    // 舰队等级：info[7]（3=舰长 2=提督 1=总督）；房管：info[2][2]
+    let guard_level = info.get(7).and_then(|v| v.as_u64()).map(|v| v as u32);
+    // 荣耀等级（全站财富等级）：info[16][0]
+    let wealth_level = info
+        .get(16)
+        .and_then(|w| w.as_array())
+        .and_then(|a| a.first())
+        .and_then(|v| v.as_u64())
+        .map(|v| v as u32);
+    let is_admin = user_info.get(2).and_then(|v| v.as_u64()).unwrap_or(0) > 0;
+
     Some(Danmaku {
         id,
         username,
         content,
         timestamp,
         color,
+        medal_level,
+        medal_name,
+        medal_room_id,
+        user_level,
+        guard_level,
+        wealth_level,
+        is_admin,
     })
 }
 

@@ -11,3 +11,6 @@ dev.log
 app-icon.png
 *.local
 .DS_Store
+
+# 根目录截图（UI 验证产物）
+/*.png

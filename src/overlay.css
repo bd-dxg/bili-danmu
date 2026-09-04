@@ -1,0 +1,11 @@
+/* Overlay 窗口专属样式：背景必须完全透明（不要引入主界面的 style.css） */
+html,
+body,
+#app {
+  background: transparent !important;
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+}

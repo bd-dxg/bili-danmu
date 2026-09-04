@@ -1,4 +1,4 @@
-# bili-danmu UI 自动化辅助脚本（开发调试用）
+﻿# bili-danmu UI 自动化辅助脚本（开发调试用）
 # 用法:
 #   ui.ps1 rect                显示主窗口矩形
 #   ui.ps1 fg                  显示前台窗口
@@ -12,8 +12,19 @@ param(
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$Args
 )
 
+# 目标窗口标题（默认主窗口；overlay 测试时传 -Title 'bili-danmu overlay'）
+$script:Title = "bili-danmu"
+for ($i = 0; $i -lt $Args.Count; $i++) {
+    if ($Args[$i] -eq "-Title" -and ($i + 1) -lt $Args.Count) {
+        $script:Title = $Args[$i + 1]
+        $Args = $Args[0..($i-1)] + $Args[($i+2)..($Args.Count-1)]
+        break
+    }
+}
+
 Add-Type @"
 using System;
+using System.Text;
 using System.Runtime.InteropServices;
 public class UINative {
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
@@ -23,6 +34,9 @@ public class UINative {
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
   [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int n);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc cb, IntPtr lp);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder sb, int max);
+  public delegate bool EnumProc(IntPtr h, IntPtr lp);
   public struct RECT { public int L, T, R, B; }
 }
 "@
@@ -30,9 +44,19 @@ Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
 
 function Get-MainWin {
-    $p = Get-Process bili-danmu -ErrorAction Stop | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
-    if (-not $p) { throw "bili-danmu 主窗口未找到" }
-    return $p
+    # 进程可能有多个窗口（主窗口 + overlay），按精确标题查找
+    $pid2 = (Get-Process bili-danmu -ErrorAction Stop | Select-Object -First 1).Id
+    $script:Found = [IntPtr]::Zero
+    $cb = [UINative+EnumProc]{
+        param($h, $lp)
+        $sb = New-Object System.Text.StringBuilder 256
+        [UINative]::GetWindowText($h, $sb, 256) | Out-Null
+        if ($sb.ToString() -eq $script:Title) { $script:Found = $h; return $false }
+        return $true
+    }
+    [UINative]::EnumWindows($cb, [IntPtr]::Zero) | Out-Null
+    if ($script:Found -eq [IntPtr]::Zero) { throw "窗口 '$script:Title' 未找到" }
+    return $script:Found
 }
 
 function Get-Rect([IntPtr]$h) {
@@ -41,8 +65,7 @@ function Get-Rect([IntPtr]$h) {
     return $r
 }
 
-$p = Get-MainWin
-$h = $p.MainWindowHandle
+$h = Get-MainWin
 
 switch ($Cmd) {
     "rect" {
