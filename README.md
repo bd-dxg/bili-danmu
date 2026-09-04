@@ -27,7 +27,7 @@
 | 断开自动重连（指数退避） | 🔜 未做 |
 | 礼物/SC/舰队等事件解析 | 🔜 未做（V1 只处理普通弹幕，符合 PRD） |
 
-<p align="center"><img src="./imgs/1788531817604.jpg" alt="bili-danmu" ></p>
+<p align="center"><img src="./imgs/1788531817604.webp" alt="bili-danmu" ></p>
 
 ### 弹幕显示（Overlay）
 
@@ -48,7 +48,7 @@
 | 关键词 / 用户屏蔽过滤 | 🔜 未做 |
 | 连接状态 / 系统提示行（与弹幕同字体同描边） | ✅ |
 
-<p align="center"><img src="./imgs/1788531531862.jpg" alt="bili-danmu" ></p>
+<p align="center"><img src="./imgs/1788531531862.webp" alt="bili-danmu" ></p>
 
 ### TTS 朗读
 
@@ -60,6 +60,8 @@
 | 朗读内容清洗（emoji / 超长文本 / 重复字符） | 🔜 未做 |
 
 > 设置页「朗读」目前为占位页，整个 M5 里程碑尚未开工。
+
+<p align="center"><img src="./imgs/1788534096954.webp" alt="bili-danmu" ></p>
 
 ### 产品化
 
@@ -74,6 +76,8 @@
 | 开机自启 / 启动自动连接上次房间 | 🔜 未做 |
 | 统一日志系统 | 🔜 未做 |
 | Release 打包验证（目标安装包 ≤ 30MB） | 🔜 未做 |
+
+<p align="center"><img src="./imgs/1788534284111.webp" alt="bili-danmu" ></p>
 
 ## 快速开始
 
