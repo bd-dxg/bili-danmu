@@ -3,6 +3,7 @@ import { onMounted, ref } from "vue";
 import RoomView from "./views/RoomView.vue";
 import DanmakuView from "./views/DanmakuView.vue";
 import OverlayView from "./views/OverlayView.vue";
+import AboutView from "./views/AboutView.vue";
 import LoginDialog from "./components/LoginDialog.vue";
 import { refreshLogin } from "./composables/useLogin";
 
@@ -42,7 +43,8 @@ const current = ref<NavKey>("room");
       <RoomView v-show="current === 'room'" />
       <DanmakuView v-show="current === 'danmaku'" />
       <OverlayView v-show="current === 'overlay'" />
-      <section v-show="current === 'tts' || current === 'about'" class="placeholder">
+      <AboutView v-show="current === 'about'" />
+      <section v-show="current === 'tts'" class="placeholder">
         <h2>{{ navs.find((n) => n.key === current)?.label }}</h2>
         <p>该设置页在后续 Milestone 中实现。</p>
       </section>
