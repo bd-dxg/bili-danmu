@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { RoomStatusEvent } from "../types/ipc";
 import { refreshLogin, useLogin } from "../composables/useLogin";
-import { DEFAULT_ROOM_ID } from "../constants";
 
 const { loggedIn, uid, openLoginDialog, logout } = useLogin();
+const roomId = ref("");
 const busy = ref(false); // 连接/断开操作中
 const status = ref<RoomStatusEvent>({ state: "disconnected" });
 const errorMsg = ref("");
@@ -22,10 +22,15 @@ const statusText: Record<string, string> = {
 };
 
 async function connect() {
+  const id = Number(roomId.value);
+  if (!Number.isInteger(id) || id <= 0) {
+    errorMsg.value = "请输入有效的直播间 ID";
+    return;
+  }
   errorMsg.value = "";
   busy.value = true;
   try {
-    await invoke("connect_room", { roomId: DEFAULT_ROOM_ID });
+    await invoke("connect_room", { roomId: id });
   } catch (e) {
     status.value = { state: "error", message: String(e) };
   } finally {
@@ -51,13 +56,6 @@ async function handleLogout() {
   }
   await logout();
 }
-
-// 登录完成 → 自动连接锁定直播间（仅当当前未连接时）
-watch(loggedIn, async (now, prev) => {
-  if (now && !prev && status.value.state === "disconnected") {
-    await connect();
-  }
-});
 
 onMounted(async () => {
   await refreshLogin();
@@ -91,10 +89,10 @@ onUnmounted(() => {
 
     <div class="row">
       <input
-        :value="DEFAULT_ROOM_ID"
+        v-model="roomId"
         class="room-input"
         type="number"
-        disabled
+        placeholder="输入直播间 ID，如 22312451"
       />
       <button
         v-if="status.state === 'connected'"
@@ -196,14 +194,6 @@ h2 {
 
 .room-input:focus {
   border-color: var(--accent);
-}
-
-.room-input:disabled {
-  background: var(--hover);
-  color: var(--text-faint);
-  border-color: var(--border);
-  cursor: not-allowed;
-  opacity: 0.75;
 }
 
 .btn {
