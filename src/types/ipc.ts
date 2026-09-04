@@ -5,21 +5,19 @@
 export type RoomStatusEvent =
   | { state: "disconnected" }
   | { state: "connecting"; roomId: number }
+  /** roomId 为真实房间号（短号解析后） */
   | { state: "connected"; roomId: number }
   | { state: "error"; roomId?: number; message: string }
   | { state: "reconnecting"; roomId: number; attempt: number };
 
-/** 心跳事件（Rust → Vue，事件名 heartbeat，M1 用于验证后台 emit 链路） */
-export interface HeartbeatEvent {
-  ts: number;
-}
-
-/** 弹幕事件（Rust → Vue，事件名 danmaku，M2 接入） */
+/** 弹幕事件（Rust → Vue，事件名 danmaku） */
 export interface DanmakuEvent {
   id: string;
   username: string;
   content: string;
+  /** Unix 秒 */
   timestamp: number;
+  /** 弹幕颜色，如 "#FFFFFF"；缺省用默认色 */
   color?: string;
 }
 

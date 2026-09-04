@@ -1,6 +1,10 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref } from "vue";
 import RoomView from "./views/RoomView.vue";
+import LoginDialog from "./components/LoginDialog.vue";
+import { refreshLogin } from "./composables/useLogin";
+
+onMounted(refreshLogin);
 
 type NavKey = "room" | "danmaku" | "tts" | "overlay" | "about";
 
@@ -32,13 +36,13 @@ const current = ref<NavKey>("room");
       </nav>
     </aside>
     <main class="content">
-      <RoomView v-if="current === 'room'" />
-      <section v-else class="placeholder">
+      <RoomView v-if="current === 'room'" />      <section v-else class="placeholder">
         <h2>{{ navs.find((n) => n.key === current)?.label }}</h2>
         <p>该设置页在后续 Milestone 中实现。</p>
       </section>
     </main>
   </div>
+  <LoginDialog />
 </template>
 
 <style scoped>
