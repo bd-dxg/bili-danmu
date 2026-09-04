@@ -1,0 +1,13 @@
+# Node
+node_modules/
+dist/
+
+# Rust
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# 其他
+dev.log
+app-icon.png
+*.local
+.DS_Store

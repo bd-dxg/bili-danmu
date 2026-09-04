@@ -1,0 +1,82 @@
+:root {
+  /* 默认（浅色系统主题） */
+  color-scheme: light;
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+
+  --bg: #f5f6f8;
+  --bg-side: #eceef2;
+  --bg-elev: #ffffff;
+  --border: #d8dbe2;
+  --text: #1d2026;
+  --text-dim: #4d5260;
+  --text-faint: #8a8f9c;
+
+  --accent: #2b5fd9;
+  --accent-hover: #2452c0;
+  --accent-soft: #dce6fb;
+  --accent-strong-text: #1d4ed8;
+  --hover: #e3e6ec;
+
+  --danger: #c93a32;
+  --danger-hover: #b02f28;
+
+  --green: #2da44e;
+  --yellow: #b57e00;
+  --red: #cf222e;
+  --gray: #9a9ea8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+
+    --bg: #17181c;
+    --bg-side: #1d1e24;
+    --bg-elev: #23242b;
+    --border: #33343c;
+    --text: #e8e8ea;
+    --text-dim: #b0b2ba;
+    --text-faint: #6a6d77;
+
+    --accent: #2d6cdf;
+    --accent-hover: #3575ea;
+    --accent-soft: #2f3b52;
+    --accent-strong-text: #ffffff;
+    --hover: #26272d;
+
+    --danger: #b3372f;
+    --danger-hover: #c53f36;
+
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #e5534b;
+    --gray: #666666;
+  }
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  user-select: none;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+input,
+select {
+  font-family: inherit;
+}
