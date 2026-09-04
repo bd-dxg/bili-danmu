@@ -2,20 +2,18 @@
 import { onMounted, ref } from "vue";
 import RoomView from "./views/RoomView.vue";
 import DanmakuView from "./views/DanmakuView.vue";
-import OverlayView from "./views/OverlayView.vue";
 import AboutView from "./views/AboutView.vue";
 import LoginDialog from "./components/LoginDialog.vue";
 import { refreshLogin } from "./composables/useLogin";
 
 onMounted(refreshLogin);
 
-type NavKey = "room" | "danmaku" | "tts" | "overlay" | "about";
+type NavKey = "room" | "danmaku" | "tts" | "about";
 
 const navs: { key: NavKey; label: string }[] = [
   { key: "room", label: "直播间" },
   { key: "danmaku", label: "弹幕" },
   { key: "tts", label: "朗读" },
-  { key: "overlay", label: "悬浮窗" },
   { key: "about", label: "关于" },
 ];
 
@@ -42,7 +40,6 @@ const current = ref<NavKey>("room");
       <!-- v-show 常驻渲染：切换页面不销毁组件，连接状态/弹幕列表保留 -->
       <RoomView v-show="current === 'room'" />
       <DanmakuView v-show="current === 'danmaku'" />
-      <OverlayView v-show="current === 'overlay'" />
       <AboutView v-show="current === 'about'" />
       <section v-show="current === 'tts'" class="placeholder">
         <h2>{{ navs.find((n) => n.key === current)?.label }}</h2>

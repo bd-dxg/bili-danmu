@@ -17,8 +17,13 @@ const style = ref<OverlayStyle>({
   outline_width: 2,
 });
 const savedTip = ref(false);
+// 页内标签：style / color / window
+const tab = ref<"style" | "color" | "window">("style");
 // 弹幕窗尺寸
 const winSize = ref({ width: 480, height: 240 });
+// 弹幕窗行为开关
+const ov = ref({ visible: false, clickthrough: true, alwaysOnTop: true });
+const ovError = ref("");
 
 const FONT_CHOICES = [
   { label: "微软雅黑 UI", value: "Microsoft YaHei UI" },
@@ -50,6 +55,37 @@ function onFontSizeChange() {
   apply();
 }
 
+async function setOverlayVisible(v: boolean) {
+  ovError.value = "";
+  try {
+    ov.value.visible = await invoke<boolean>("overlay_set_visible", { visible: v });
+  } catch (e) {
+    ovError.value = String(e);
+  }
+}
+
+async function setOverlayClickthrough(v: boolean) {
+  ovError.value = "";
+  try {
+    ov.value.clickthrough = await invoke<boolean>("overlay_set_clickthrough", {
+      enabled: v,
+    });
+  } catch (e) {
+    ovError.value = String(e);
+  }
+}
+
+async function setOverlayTop(v: boolean) {
+  ovError.value = "";
+  try {
+    ov.value.alwaysOnTop = await invoke<boolean>("overlay_set_always_on_top", {
+      enabled: v,
+    });
+  } catch (e) {
+    ovError.value = String(e);
+  }
+}
+
 onMounted(async () => {
   try {
     style.value = await invoke<OverlayStyle>("overlay_get_style");
@@ -62,12 +98,35 @@ onMounted(async () => {
   } catch (e) {
     console.error("读取尺寸失败", e);
   }
+  // 同步弹幕窗行为开关初始态
+  try {
+    ov.value.visible = await invoke<boolean>("overlay_is_visible");
+    ov.value.clickthrough = await invoke<boolean>("overlay_get_clickthrough");
+  } catch (e) {
+    console.error("读取弹幕窗状态失败", e);
+  }
 });
 </script>
 
 <template>
   <div class="danmaku-page">
-    <h2>弹幕样式</h2>
+    <div class="tabs">
+      <button
+        v-for="t in [
+          { key: 'style', label: '弹幕样式' },
+          { key: 'color', label: '颜色与描边' },
+          { key: 'window', label: '弹幕窗' },
+        ]"
+        :key="t.key"
+        class="tab-btn"
+        :class="{ active: tab === t.key }"
+        @click="tab = t.key as 'style' | 'color' | 'window'"
+      >
+        {{ t.label }}
+      </button>
+    </div>
+
+    <section v-show="tab === 'style'" class="tab-pane">
 
     <div class="setting-card">
       <div class="setting-row">
@@ -128,7 +187,9 @@ onMounted(async () => {
       <p v-if="savedTip" class="saved">✓ 已应用并保存</p>
     </div>
 
-    <h2 class="sub-title">颜色与描边</h2>
+    </section>
+
+    <section v-show="tab === 'color'" class="tab-pane">
 
     <div class="setting-card">
       <div class="setting-row">
@@ -193,9 +254,43 @@ onMounted(async () => {
       <p v-if="savedTip" class="saved">✓ 已应用并保存</p>
     </div>
 
-    <h2 class="sub-title">弹幕窗大小</h2>
+    </section>
+
+    <section v-show="tab === 'window'" class="tab-pane">
 
     <div class="setting-card">
+      <p v-if="ovError" class="error">{{ ovError }}</p>
+
+      <div class="setting-row">
+        <span class="label">显示弹幕窗</span>
+        <input
+          type="checkbox"
+          class="switch"
+          :checked="ov.visible"
+          @change="setOverlayVisible(($event.target as HTMLInputElement).checked)"
+        />
+      </div>
+
+      <div class="setting-row">
+        <span class="label">鼠标穿透</span>
+        <input
+          type="checkbox"
+          class="switch"
+          :checked="ov.clickthrough"
+          @change="setOverlayClickthrough(($event.target as HTMLInputElement).checked)"
+        />
+      </div>
+
+      <div class="setting-row">
+        <span class="label">始终置顶</span>
+        <input
+          type="checkbox"
+          class="switch"
+          :checked="ov.alwaysOnTop"
+          @change="setOverlayTop(($event.target as HTMLInputElement).checked)"
+        />
+      </div>
+
       <div class="setting-row">
         <span class="label">宽度</span>
         <div class="size-control">
@@ -224,8 +319,13 @@ onMounted(async () => {
           <span class="value">{{ winSize.height }}px</span>
         </div>
       </div>
-      <p class="tip">调整弹幕窗宽高（位置和大小会自动保存，下次启动恢复）。</p>
+      <p class="tip">
+        关闭穿透后，可在弹幕窗上按住拖动、边缘调整大小；开启穿透后鼠标点击会落到弹幕窗下方的窗口。
+        位置和大小自动保存，下次启动恢复。
+      </p>
     </div>
+
+    </section>
   </div>
 </template>
 
@@ -235,13 +335,34 @@ onMounted(async () => {
   flex-direction: column;
 }
 
-h2 {
-  font-size: 16px;
+/* 页内标签栏 */
+.tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
   margin-bottom: 14px;
 }
 
-.sub-title {
-  margin-top: 18px;
+.tab-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 15px;
+  font-weight: bold;
+  padding: 8px 16px 10px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+
+.tab-btn:hover {
+  color: var(--text);
+}
+
+.tab-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
 }
 
 .setting-card {
@@ -328,6 +449,12 @@ h2 {
   color: var(--text-faint);
   padding: 4px 0 10px;
   line-height: 1.6;
+}
+
+.error {
+  color: var(--red);
+  font-size: 13px;
+  padding: 6px 0 0;
 }
 
 .saved {
