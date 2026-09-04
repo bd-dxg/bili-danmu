@@ -169,46 +169,52 @@ onUnmounted(() => {
       :style="{ textShadow: rowShadow }"
       data-tauri-drag-region
     >
-      <!-- 身份前缀（行首，可叠加）：舰/提督/总督 + 房 -->
-      <template v-for="r in rolesOf(d)" :key="r.cls">
-        <span
-          v-if="style.show_role"
-          class="chip role"
-          :class="r.cls"
-          data-tauri-drag-region
-        >{{ r.label }}</span>
-      </template>
-      <template v-if="style.show_wealth && d.wealth_level && d.wealth_level > 0">
-        <span class="chip lv" data-tauri-drag-region>LV{{ d.wealth_level }}</span>
-      </template>
-      <template v-if="style.show_medal && d.medal_name && d.isRoomMedal">
-        <span class="chip medal-room" data-tauri-drag-region>
-          {{ d.medal_name }}{{ d.medal_level ?? 0 }}
+      <!-- 徽章区：固定前缀列 + LV/粉丝牌等，单行不折行 -->
+      <span class="meta">
+        <!-- 身份前缀列（固定宽度，无前缀留空）→ LV/粉丝牌/文字各行垂直对齐 -->
+        <span class="role-slot">
+          <template v-if="style.show_role">
+            <span
+              v-for="r in rolesOf(d)"
+              :key="r.cls"
+              class="chip role"
+              :class="r.cls"
+            >{{ r.label }}</span>
+          </template>
         </span>
-      </template>
-      <template v-else-if="style.show_medal && d.medal_name">
-        <span class="chip medal-other" data-tauri-drag-region>
-          {{ d.medal_name }}{{ d.medal_level ?? 0 }}
-        </span>
-      </template>
-      <template v-if="d.username">
+        <template v-if="style.show_wealth && d.wealth_level && d.wealth_level > 0">
+          <span class="chip lv">LV{{ d.wealth_level }}</span>
+        </template>
+        <template v-if="style.show_medal && d.medal_name && d.isRoomMedal">
+          <span class="chip medal-room">
+            {{ d.medal_name }}{{ d.medal_level ?? 0 }}
+          </span>
+        </template>
+        <template v-else-if="style.show_medal && d.medal_name">
+          <span class="chip medal-other">
+            {{ d.medal_name }}{{ d.medal_level ?? 0 }}
+          </span>
+        </template>
+      </span>
+      <!-- 正文区：用户名 + 内容，超宽在此区内折行（续行与首行正文同列） -->
+      <span class="msg">
+        <template v-if="d.username">
+          <span
+            class="user"
+            :style="{
+              color: style.username_color,
+              fontWeight: style.bold ? 800 : 600,
+            }"
+          >{{ d.username }}：</span>
+        </template>
         <span
-          class="user"
+          class="content"
           :style="{
-            color: style.username_color,
-            fontWeight: style.bold ? 800 : 600,
+            color: style.content_color,
+            fontWeight: style.bold ? 700 : 400,
           }"
-          data-tauri-drag-region
-        >{{ d.username }}：</span>
-      </template>
-      <span
-        class="content"
-        :style="{
-          color: style.content_color,
-          fontWeight: style.bold ? 700 : 400,
-        }"
-        data-tauri-drag-region
-      >{{ d.content }}</span>
+        >{{ d.content }}</span>
+      </span>
     </div>
   </div>
 </template>
@@ -226,17 +232,42 @@ onUnmounted(() => {
   user-select: none;
 }
 
-/* 弹幕行：文本流式布局（名字与内容连续，超宽自然断行，不撕裂） */
+/* 身份前缀列：固定 4em 宽度，无前缀留空；保证各行 LV 徽章同列对齐 */
+.role-slot {
+  display: inline-flex;
+  align-items: center;
+  width: 4em;
+  overflow: hidden;
+}
+
+/* 弹幕行：徽章区(meta) + 正文区(msg) 两栏；正文超宽在 msg 内折行，续行与首行同列 */
 .danmu-row {
+  display: flex;
+  align-items: flex-start;
   font-size: inherit;
   line-height: 1.65;
-  word-break: break-all;
   color: #fff;
   text-shadow:
     0 0 2px rgba(0, 0, 0, 0.95),
     0 0 2px rgba(0, 0, 0, 0.95),
     1px 1px 1px rgba(0, 0, 0, 0.95),
     -1px -1px 1px rgba(0, 0, 0, 0.95);
+}
+
+/* 徽章区：横向单行，不折行不压缩 */
+.meta {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  white-space: nowrap;
+  margin-top: 3px; /* 与正文首行文字视觉中轴对齐 */
+}
+
+/* 正文区：占剩余宽度，长文本在此折行 */
+.msg {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-all;
 }
 
 .user {
@@ -263,6 +294,11 @@ onUnmounted(() => {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
   transform: translateY(-1px);
+}
+
+/* 徽章区内 chip 不压缩（多 chip 叠加时保持自身宽度） */
+.meta .chip {
+  flex-shrink: 0;
 }
 
 /* 荣耀等级徽章：固定宽度（LV5 与 LV14 同宽） */
