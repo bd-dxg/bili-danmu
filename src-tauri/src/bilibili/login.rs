@@ -139,3 +139,31 @@ pub fn cookie_value(cookies: &str, name: &str) -> Option<String> {
     }
     None
 }
+
+/// 登录后通过 nav 接口获取用户昵称（带登录 Cookie）
+pub async fn fetch_uname(client: &reqwest::Client, cookies: &str) -> Result<String, String> {
+    let resp = client
+        .get("https://api.bilibili.com/x/web-interface/nav")
+        .header("Cookie", cookies)
+        .send()
+        .await
+        .map_err(|e| format!("请求用户信息失败: {e}"))?
+        .json::<serde_json::Value>()
+        .await
+        .map_err(|e| format!("用户信息响应解析失败: {e}"))?;
+
+    let code = resp.get("code").and_then(|c| c.as_i64()).unwrap_or(-1);
+    if code != 0 {
+        return Err(format!("nav 接口 code={code}"));
+    }
+    let uname = resp
+        .pointer("/data/uname")
+        .and_then(|u| u.as_str())
+        .unwrap_or("")
+        .to_string();
+    if uname.is_empty() {
+        Err("nav 响应缺少昵称".into())
+    } else {
+        Ok(uname)
+    }
+}

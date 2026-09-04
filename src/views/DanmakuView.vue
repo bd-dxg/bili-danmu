@@ -15,6 +15,7 @@ const style = ref<OverlayStyle>({
   outline: true,
   outline_color: "#000000",
   outline_width: 2,
+  row_gap: 0,
 });
 const savedTip = ref(false);
 // 页内标签：style / color / window
@@ -141,6 +142,21 @@ onMounted(async () => {
             @change="onFontSizeChange"
           />
           <span class="value">{{ style.font_size }}px</span>
+        </div>
+      </div>
+
+      <div class="setting-row">
+        <span class="label">行间距</span>
+        <div class="size-control">
+          <input
+            v-model.number="style.row_gap"
+            type="range"
+            min="0"
+            max="30"
+            step="1"
+            @change="apply()"
+          />
+          <span class="value">{{ style.row_gap }}px</span>
         </div>
       </div>
 

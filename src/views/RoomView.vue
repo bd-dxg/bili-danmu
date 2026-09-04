@@ -5,7 +5,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { RoomStatusEvent } from "../types/ipc";
 import { refreshLogin, useLogin } from "../composables/useLogin";
 
-const { loggedIn, uid, openLoginDialog, logout } = useLogin();
+const { loggedIn, uid, uname, openLoginDialog, logout } = useLogin();
 const roomId = ref("");
 const busy = ref(false); // 连接/断开操作中
 const status = ref<RoomStatusEvent>({ state: "disconnected" });
@@ -76,7 +76,7 @@ onUnmounted(() => {
   <div class="room-page">
     <div class="login-bar" :class="{ logged: loggedIn }">
       <template v-if="loggedIn">
-        <span class="ok">✓ 已登录（UID {{ uid }}）</span>
+        <span class="ok">✓ 已登录<span v-if="uname">：{{ uname }}</span><span v-else>（UID {{ uid }}）</span></span>
         <button class="link-btn" @click="handleLogout">退出登录</button>
       </template>
       <template v-else>
@@ -194,6 +194,13 @@ h2 {
 
 .room-input:focus {
   border-color: var(--accent);
+}
+
+/* 隐藏 number 输入框自带的上下步进箭头 */
+.room-input::-webkit-outer-spin-button,
+.room-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .btn {

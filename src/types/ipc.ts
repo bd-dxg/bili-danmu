@@ -49,6 +49,8 @@ export interface OverlayStyle {
   outline: boolean;
   outline_color: string;
   outline_width: number;
+  /** 弹幕行间距 px（0=不额外加，仅行高） */
+  row_gap: number;
 }
 
 /** connect_room 返回值 */

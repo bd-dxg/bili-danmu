@@ -202,6 +202,7 @@ fn get_login_info(state: State<'_, AppState>) -> serde_json::Value {
     json!({
         "loggedIn": auth.is_some(),
         "uid": auth.as_ref().map(|a| a.uid).unwrap_or(0),
+        "uname": auth.as_ref().and_then(|a| a.uname.clone()),
     })
 }
 
@@ -230,7 +231,13 @@ async fn qr_poll(
                     message: "登录响应缺少 DedeUserID".into(),
                 });
             }
-            let auth = config::AuthInfo { uid, cookies };
+            // 顺带拉取昵称（失败不影响登录，仅显示用）
+            let uname = bilibili::login::fetch_uname(&client, &cookies).await.ok();
+            let auth = config::AuthInfo {
+                uid,
+                cookies,
+                uname,
+            };
             config::save_auth(&app, &auth).map_err(|e| e)?;
             *state.auth.lock().unwrap() = Some(auth);
             Ok(bilibili::login::PollResult::Success {

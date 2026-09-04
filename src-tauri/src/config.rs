@@ -13,6 +13,9 @@ pub struct AuthInfo {
     pub uid: i64,
     /// 登录 Cookie 串（如 "SESSDATA=..; DedeUserID=.."）
     pub cookies: String,
+    /// 用户昵称（nav 接口获取；旧配置无此字段为 None）
+    #[serde(default)]
+    pub uname: Option<String>,
 }
 
 /// Overlay 弹幕样式（M4）
@@ -41,6 +44,8 @@ pub struct OverlayStyle {
     pub outline_color: String,
     /// 描边宽度（px 近似值）
     pub outline_width: f64,
+    /// 弹幕行间距（px，0=不额外加，仅行高）
+    pub row_gap: f64,
 }
 
 impl Default for OverlayStyle {
@@ -57,6 +62,7 @@ impl Default for OverlayStyle {
             outline: true,
             outline_color: "#000000".into(),
             outline_width: 2.0,
+            row_gap: 0.0,
         }
     }
 }

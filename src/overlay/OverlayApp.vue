@@ -26,6 +26,7 @@ const style = ref<OverlayStyle>({
   outline: true,
   outline_color: "#000000",
   outline_width: 2,
+  row_gap: 0,
 });
 
 /** 描边 → 四向 text-shadow（硬边，宽度近似） */
@@ -92,17 +93,17 @@ let unlistenDanmu: UnlistenFn | undefined;
 let unlistenRoom: UnlistenFn | undefined;
 let unlistenStyle: UnlistenFn | undefined;
 
-/// 身份前缀列表（可叠加）：舰/提督/总督 + 房，按身份高低排序
+/// 身份前缀列表（可叠加）：房管 + 舰/提督/总督，按展示顺序
 function rolesOf(d: DisplayDanmaku): { label: string; cls: string }[] {
   const roles: { label: string; cls: string }[] = [];
+  if (d.is_admin) {
+    roles.push({ label: "房", cls: "admin" });
+  }
   if (d.guard_level && d.guard_level >= 1) {
     roles.push({
       label: d.guard_level === 3 ? "舰" : d.guard_level === 2 ? "提督" : "总督",
       cls: "guard",
     });
-  }
-  if (d.is_admin) {
-    roles.push({ label: "房", cls: "admin" });
   }
   return roles;
 }
@@ -159,9 +160,12 @@ onUnmounted(() => {
     :style="{
       fontSize: style.font_size + 'px',
       fontFamily: style.font_family,
+      rowGap: style.row_gap + 'px',
     }"
     data-tauri-drag-region
   >
+    <!-- 常驻透明拖拽条：不在弹幕流内，弹幕高速刷新时也能稳定拖动窗口 -->
+    <div class="drag-strip" data-tauri-drag-region></div>
     <div
       v-for="d in danmakuList"
       :key="d.id"
@@ -221,6 +225,7 @@ onUnmounted(() => {
 
 <style scoped>
 .overlay-root {
+  position: relative;
   height: 100%;
   display: flex;
   flex-direction: column;
@@ -232,12 +237,41 @@ onUnmounted(() => {
   user-select: none;
 }
 
-/* 身份前缀列：固定 4em 宽度，无前缀留空；保证各行 LV 徽章同列对齐 */
+/* 顶部常驻拖拽条：平时透明不遮挡弹幕；鼠标移入悬浮窗即浮出提示（无需精确悬停到条上） */
+.drag-strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 16px;
+  z-index: 5;
+  cursor: move;
+  background: transparent;
+  border-bottom: 1px solid transparent;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.overlay-root:hover .drag-strip {
+  background: rgba(255, 255, 255, 0.1);
+  border-bottom-color: rgba(255, 255, 255, 0.35);
+}
+
+/* 身份前缀列：固定 4em 宽度；chip 靠右紧贴 LV，无前缀行整列留空 → LV 各行同列对齐 */
 .role-slot {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-end;
+  gap: 0.2em;
   width: 4em;
+  margin-right: 0.35em;
   overflow: hidden;
+}
+
+/* 前缀列内 chip 间距由 gap 控制，去掉全局右 margin（否则尾 chip 与 LV 间出现空隙） */
+.role-slot .chip {
+  margin-right: 0;
 }
 
 /* 弹幕行：徽章区(meta) + 正文区(msg) 两栏；正文超宽在 msg 内折行，续行与首行同列 */
