@@ -1,7 +1,7 @@
 [package]
 name = "bili-danmu"
 version = "0.1.0"
-description = "轻量级 B 站直播弹幕桌面 Overlay 客户端"
+description = "轻量级 B 站直播弹幕助手"
 edition = "2021"
 
 [lib]

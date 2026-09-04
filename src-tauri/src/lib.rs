@@ -471,7 +471,16 @@ pub fn run() {
                                 let _ = w.set_focus();
                             }
                         }
-                        "quit" => app.exit(0),
+                        "quit" => {
+                            // 先销毁窗口再退出：destroy 绕过主窗 ×→隐藏 拦截，
+                            // 让 WebView2 在进程退出前释放 HWND，避免 1412 unregister 竞态
+                            let wins: Vec<_> =
+                                app.webview_windows().into_values().collect();
+                            for w in wins {
+                                let _ = w.destroy();
+                            }
+                            app.exit(0);
+                        }
                         _ => {}
                     })
                     .on_tray_icon_event(|tray, event| {
