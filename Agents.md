@@ -8,7 +8,7 @@
 
 - 前端：Vue 3（`<script setup>`）+ Vite + TypeScript，包管理 pnpm
 - 桌面壳：Tauri 2（Rust，edition 2021）
-- Rust 关键依赖：tokio / reqwest（含 cookie、gzip）/ tokio-tungstenite（弹幕 WebSocket）/ brotli-decompressor + flate2（弹幕包解压）/ md-5（WBI 签名）
+- Rust 关键依赖：tokio / reqwest（json、gzip；登录 Cookie 全程显式 header 传递）/ tokio-tungstenite（弹幕 WebSocket）/ brotli-decompressor + flate2（弹幕包解压）/ md-5（WBI 签名）/ windows-sys（登录 Cookie 的 Windows DPAPI 加密）
 - 授权：GPL-3.0
 
 ## 常用命令
@@ -30,10 +30,13 @@
 - 多窗口：根目录 `index.html`（主窗口）+ `overlay.html`（透明悬浮窗），Tauri 配置见 `src-tauri/tauri.conf.json` 与 `capabilities/default.json`
 - IPC 双向类型约定：Rust command 与 `src/types/ipc.ts` 保持一致，改动协议时两端同步
 - 注释、commit、PRD（`prd.md`）一律简体中文
-- PRD 即功能需求来源：已完成/规划状态以 `README.md` 表格和 `prd.md` 为准（TTS 朗读、滚动弹幕、断线重连、屏蔽过滤均为未做项）
+- PRD 即功能需求来源：已完成/规划状态以 `README.md` 表格和 `prd.md` 为准（TTS 朗读、滚动弹幕、屏蔽过滤均为未做项）
 
 ## 注意事项
 
 - 禁止提交：`node_modules/`、`dist/`、`src-tauri/target/`、`src-tauri/gen/schemas/`、`Task/`、`dev.log`、根目录截图（`.gitignore` 已配）
 - 弹幕为游客（uid=0）与登录两种链路，登录 Cookie 本地持久化；改动协议时用 `scripts/ws-probe.ps1` 验证
 - 弹幕窗口性能敏感（120 条上限、透明层重绘），前端改动注意不要引入高频重排
+- 登录 Cookie 在 `config.rs` 写盘边界统一 **DPAPI 加密**（`dpapi:` 前缀 + hex）落盘、读取自动解密（旧版明文无前缀兼容）：任何新增的敏感字段必须走同类加密，勿明文落盘；内存态保持明文
+- `config.rs` 读写持有全局互斥（save_* 均为 load-modify-save）：新增保存函数须沿用 `lock_cfg()` + `*_unlocked` 模式，勿在持锁时调用加锁公共入口（std Mutex 不可重入）
+- 断线自动重连在 `lib.rs` `spawn_connection`（1/2/4/…/30s 退避、10 次上限）；改连接收尾逻辑时保留取消令牌身份检查（`finish_connection`），否则旧任务会误清新连接状态
