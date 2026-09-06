@@ -54,3 +54,29 @@ export interface OverlayStyle {
 
 /** connect_room 返回值 */
 export type ConnectResult = { ok: true } | { ok: false; message: string };
+
+/** 弹幕过滤配置（Rust ↔ Vue，事件名 danmaku-filter） */
+export interface DanmakuFilter {
+  /** 只显示舰长（全部大航海）/ 房管弹幕 */
+  enable_guard_admin: boolean;
+  /** 只显示有粉丝牌的弹幕 */
+  enable_medal: boolean;
+  /** 只显示荣耀等级 ≥ wealth_min 的弹幕 */
+  enable_wealth: boolean;
+  /** 荣耀等级门槛 */
+  wealth_min: number;
+  /** 屏蔽含敏感词的弹幕（整条丢弃） */
+  enable_sensitive: boolean;
+  /** 敏感词表（内容含任一即丢弃） */
+  sensitive_words: string[];
+}
+
+/** 弹幕过滤默认值（全关 = 不过滤） */
+export const DEFAULT_DANMAKU_FILTER: DanmakuFilter = {
+  enable_guard_admin: false,
+  enable_medal: false,
+  enable_wealth: false,
+  wealth_min: 0,
+  enable_sensitive: false,
+  sensitive_words: [],
+};

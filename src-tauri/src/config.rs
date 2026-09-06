@@ -78,6 +78,40 @@ pub struct WindowBounds {
     pub h: f64,
 }
 
+/// 弹幕过滤配置
+///
+/// 身份规则间为「或」关系：任一开启的规则命中即显示（全部关闭 = 不过滤）；
+/// 敏感词屏蔽独立叠加：开关开启且命中词表时整条丢弃，白名单规则不豁免。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DanmakuFilter {
+    /// 只显示舰长（全部大航海）/ 房管弹幕
+    pub enable_guard_admin: bool,
+    /// 只显示有粉丝牌的弹幕（B 站实际只下发当前房间粉丝牌）
+    pub enable_medal: bool,
+    /// 只显示荣耀等级 ≥ wealth_min 的弹幕
+    pub enable_wealth: bool,
+    /// 荣耀等级门槛（配合 enable_wealth）
+    pub wealth_min: u32,
+    /// 屏蔽命中敏感词的弹幕（整条丢弃）
+    pub enable_sensitive: bool,
+    /// 敏感词表（弹幕内容含任一即丢弃）
+    pub sensitive_words: Vec<String>,
+}
+
+impl Default for DanmakuFilter {
+    fn default() -> Self {
+        Self {
+            enable_guard_admin: false,
+            enable_medal: false,
+            enable_wealth: false,
+            wealth_min: 0,
+            enable_sensitive: false,
+            sensitive_words: Vec::new(),
+        }
+    }
+}
+
 /// 配置文件结构（后续里程碑扩展字段）
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -85,6 +119,7 @@ pub struct ConfigFile {
     pub auth: Option<AuthInfo>,
     pub overlay_style: OverlayStyle,
     pub overlay_bounds: Option<WindowBounds>,
+    pub danmaku_filter: DanmakuFilter,
 }
 
 /// 配置读写互斥锁：save_* 均为「读整份 → 改字段 → 写整份」，并发交错会互相覆盖
@@ -193,6 +228,14 @@ pub fn save_overlay_bounds(app: &AppHandle, bounds: &WindowBounds) -> Result<(),
     let _g = lock_cfg();
     let mut cfg = load_config_unlocked(app);
     cfg.overlay_bounds = Some(*bounds);
+    save_config_unlocked(app, &cfg)
+}
+
+/// 保存弹幕过滤配置
+pub fn save_danmaku_filter(app: &AppHandle, filter: &DanmakuFilter) -> Result<(), String> {
+    let _g = lock_cfg();
+    let mut cfg = load_config_unlocked(app);
+    cfg.danmaku_filter = filter.clone();
     save_config_unlocked(app, &cfg)
 }
 

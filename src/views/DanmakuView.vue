@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import type { OverlayStyle } from "../types/ipc";
+import {
+  DEFAULT_DANMAKU_FILTER,
+  type DanmakuFilter,
+  type OverlayStyle,
+} from "../types/ipc";
 
 const style = ref<OverlayStyle>({
   font_size: 17,
@@ -18,8 +22,8 @@ const style = ref<OverlayStyle>({
   row_gap: 0,
 });
 const savedTip = ref(false);
-// 页内标签：style / color / window
-const tab = ref<"style" | "color" | "window">("style");
+// 页内标签：style / color / window / filter
+const tab = ref<"style" | "color" | "window" | "filter">("style");
 // 弹幕窗尺寸
 const winSize = ref({ width: 480, height: 240 });
 // 弹幕窗行为开关
@@ -39,6 +43,39 @@ const FONT_CHOICES = [
 let tipTimer: ReturnType<typeof setTimeout> | undefined;
 // 样式/尺寸设置失败提示
 const opError = ref("");
+
+// 弹幕过滤配置（应用后 Rust 广播给 Overlay 实时生效并持久化）
+const filter = ref<DanmakuFilter>({ ...DEFAULT_DANMAKU_FILTER });
+// 敏感词文本（textarea 编辑态，保存时解析为词表）
+const sensitiveText = ref("");
+
+/** 解析敏感词文本：按换行/中英文逗号分隔，去空去重 */
+function parseWords(text: string): string[] {
+  return [
+    ...new Set(
+      text
+        .split(/[\n,，、]/)
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+  ];
+}
+
+async function applyFilter() {
+  try {
+    // 数字输入框清空时 v-model.number 为 ''，避免脏值传给 Rust u32 反序列化报错
+    if (!Number.isFinite(filter.value.wealth_min)) {
+      filter.value.wealth_min = 0;
+    }
+    filter.value.sensitive_words = parseWords(sensitiveText.value);
+    await invoke("danmaku_set_filter", { filter: { ...filter.value } });
+    savedTip.value = true;
+    if (tipTimer) clearTimeout(tipTimer);
+    tipTimer = setTimeout(() => (savedTip.value = false), 1200);
+  } catch (e) {
+    showOpError(e);
+  }
+}
 
 function showOpError(e: unknown) {
   opError.value = String(e);
@@ -123,6 +160,13 @@ onMounted(async () => {
   } catch (e) {
     console.error("读取弹幕窗状态失败", e);
   }
+  // 读取过滤配置初始值（敏感词回填文本区）
+  try {
+    filter.value = await invoke<DanmakuFilter>("danmaku_get_filter");
+    sensitiveText.value = filter.value.sensitive_words.join("\n");
+  } catch (e) {
+    console.error("读取过滤配置失败", e);
+  }
 });
 </script>
 
@@ -135,11 +179,12 @@ onMounted(async () => {
           { key: 'style', label: '弹幕样式' },
           { key: 'color', label: '颜色与描边' },
           { key: 'window', label: '弹幕窗' },
+          { key: 'filter', label: '弹幕过滤' },
         ]"
         :key="t.key"
         class="tab-btn"
         :class="{ active: tab === t.key }"
-        @click="tab = t.key as 'style' | 'color' | 'window'"
+        @click="tab = t.key as 'style' | 'color' | 'window' | 'filter'"
       >
         {{ t.label }}
       </button>
@@ -360,6 +405,83 @@ onMounted(async () => {
     </div>
 
     </section>
+
+    <section v-show="tab === 'filter'" class="tab-pane">
+
+    <div class="setting-card">
+      <div class="setting-row">
+        <span class="label">只显示舰长 / 房管弹幕</span>
+        <input
+          v-model="filter.enable_guard_admin"
+          type="checkbox"
+          class="switch"
+          @change="applyFilter()"
+        />
+      </div>
+
+      <div class="setting-row">
+        <span class="label">只显示有粉丝牌的弹幕</span>
+        <input
+          v-model="filter.enable_medal"
+          type="checkbox"
+          class="switch"
+          @change="applyFilter()"
+        />
+      </div>
+
+      <div class="setting-row">
+        <span class="label">
+          只显示荣耀等级 ≥
+          <input
+            v-model.number="filter.wealth_min"
+            type="number"
+            min="0"
+            max="100"
+            class="num-inline"
+            @change="applyFilter()"
+          />
+          的弹幕
+        </span>
+        <input
+          v-model="filter.enable_wealth"
+          type="checkbox"
+          class="switch"
+          @change="applyFilter()"
+        />
+      </div>
+      <p class="tip">
+        开启多条身份规则时，弹幕命中任意一条即显示（如同时开舰长/房管与粉丝牌，两者都算）。
+        全部关闭 = 不过滤身份。
+      </p>
+      <p v-if="savedTip" class="saved">✓ 已应用并保存</p>
+    </div>
+
+    <div class="setting-card words-card">
+      <div class="setting-row">
+        <span class="label">屏蔽含敏感词的弹幕</span>
+        <input
+          v-model="filter.enable_sensitive"
+          type="checkbox"
+          class="switch"
+          @change="applyFilter()"
+        />
+      </div>
+      <p class="tip">
+        每行一个关键词（也支持逗号分隔）。弹幕内容命中任一词即整条不显示；
+        该屏蔽对上述身份规则同样生效（舰长/房管发言命中也会被屏蔽）。
+      </p>
+      <textarea
+        v-model="sensitiveText"
+        class="words-input"
+        rows="5"
+        placeholder="每行一个关键词，如：加群 / 广告, 代练"
+      ></textarea>
+      <div class="words-actions">
+        <button class="save-btn" @click="applyFilter()">保存敏感词</button>
+      </div>
+    </div>
+
+    </section>
   </div>
 </template>
 
@@ -487,6 +609,67 @@ onMounted(async () => {
   color: var(--text-faint);
   padding: 4px 0 10px;
   line-height: 1.6;
+}
+
+/* 弹幕过滤页：荣耀等级阈值内联输入 */
+.num-inline {
+  width: 56px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  padding: 3px 6px;
+  font-size: 13px;
+  outline: none;
+  text-align: center;
+}
+
+.num-inline:focus {
+  border-color: var(--accent);
+}
+
+/* 敏感词输入区 */
+.words-card .tip {
+  margin-top: 4px;
+}
+
+.words-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: inherit;
+  line-height: 1.6;
+  resize: vertical;
+  outline: none;
+}
+
+.words-input:focus {
+  border-color: var(--accent);
+}
+
+.words-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 0 12px;
+}
+
+.save-btn {
+  border: none;
+  border-radius: 6px;
+  padding: 6px 18px;
+  font-size: 13px;
+  color: #fff;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+.save-btn:hover {
+  background: var(--accent-hover);
 }
 
 .error {
