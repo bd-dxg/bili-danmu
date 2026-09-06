@@ -2,7 +2,13 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
-import type { DanmakuEvent, OverlayStyle, RoomStatusEvent } from "../types/ipc";
+import {
+  DEFAULT_DANMAKU_FILTER,
+  type DanmakuEvent,
+  type DanmakuFilter,
+  type OverlayStyle,
+  type RoomStatusEvent,
+} from "../types/ipc";
 
 // 弹幕列表（统一行样式：徽章同尺寸、文字同字号）
 interface DisplayDanmaku extends DanmakuEvent {
@@ -13,6 +19,8 @@ const danmakuList = ref<DisplayDanmaku[]>([]);
 const currentRoomId = ref(0);
 // 连接状态（空窗时显示初始化提示，避免无界面窗口）
 const connState = ref<"disconnected" | "connected">("disconnected");
+// 弹幕过滤配置（设置页变更 → Rust 广播 danmaku-filter 事件 → 实时生效）
+const filter = ref<DanmakuFilter>({ ...DEFAULT_DANMAKU_FILTER });
 // 弹幕样式（字号/字体/是否用原色）
 const style = ref<OverlayStyle>({
   font_size: 17,
@@ -92,6 +100,27 @@ function pushSystem(text: string) {
 let unlistenDanmu: UnlistenFn | undefined;
 let unlistenRoom: UnlistenFn | undefined;
 let unlistenStyle: UnlistenFn | undefined;
+let unlistenFilter: UnlistenFn | undefined;
+
+/// 弹幕过滤判定：
+/// 身份规则（舰长/房管、有粉丝牌、荣耀等级）为「或」关系——任一开启的规则命中即显示；
+/// 身份规则全关 = 不过滤；敏感词屏蔽独立叠加——开关开启且命中词表时整条丢弃（不豁免）。
+function shouldShowDanmaku(d: DanmakuEvent, f: DanmakuFilter): boolean {
+  if (
+    f.enable_sensitive &&
+    f.sensitive_words.some((w) => w && d.content.toLowerCase().includes(w.toLowerCase()))
+  ) {
+    return false;
+  }
+  const anyIdentityOn =
+    f.enable_guard_admin || f.enable_medal || f.enable_wealth;
+  if (!anyIdentityOn) return true;
+  return (
+    (f.enable_guard_admin && (d.is_admin || (d.guard_level ?? 0) >= 1)) ||
+    (f.enable_medal && (d.medal_level ?? 0) > 0) ||
+    (f.enable_wealth && (d.wealth_level ?? 0) >= f.wealth_min)
+  );
+}
 
 /// 身份前缀列表（可叠加）：房管 + 舰/提督/总督，按展示顺序
 function rolesOf(d: DisplayDanmaku): { label: string; cls: string }[] {
@@ -114,6 +143,10 @@ onMounted(async () => {
   });
   unlistenDanmu = await listen<DanmakuEvent>("danmaku", (e) => {
     const d = e.payload as DisplayDanmaku;
+    // 过滤：不满足配置规则（敏感词命中/身份不匹配）的弹幕整条丢弃
+    if (!shouldShowDanmaku(d, filter.value)) {
+      return;
+    }
     d.isRoomMedal =
       d.medal_room_id !== undefined &&
       currentRoomId.value !== 0 &&
@@ -127,9 +160,18 @@ onMounted(async () => {
   unlistenStyle = await listen<OverlayStyle>("overlay-style", (e) => {
     style.value = e.payload;
   });
+  unlistenFilter = await listen<DanmakuFilter>("danmaku-filter", (e) => {
+    filter.value = e.payload;
+  });
   // 初始同步样式
   try {
     style.value = await invoke<OverlayStyle>("overlay_get_style");
+  } catch {
+    /* ignore */
+  }
+  // 初始同步过滤配置
+  try {
+    filter.value = await invoke<DanmakuFilter>("danmaku_get_filter");
   } catch {
     /* ignore */
   }
@@ -151,6 +193,7 @@ onUnmounted(() => {
   unlistenDanmu?.();
   unlistenRoom?.();
   unlistenStyle?.();
+  unlistenFilter?.();
 });
 </script>
 

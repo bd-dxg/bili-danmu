@@ -14,8 +14,8 @@
       {
         "label": "main",
         "title": "bili-danmu",
-        "width": 620,
-        "height": 520,
+        "width": 880,
+        "height": 650,
         "minWidth": 520,
         "minHeight": 420,
         "resizable": true,

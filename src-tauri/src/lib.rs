@@ -41,6 +41,8 @@ struct AppState {
 struct OverlayState {
     clickthrough: Mutex<bool>,
     style: Mutex<config::OverlayStyle>,
+    /// 弹幕过滤配置（内存态，供 Overlay 实时读取；变更广播 danmaku-filter 事件）
+    filter: Mutex<config::DanmakuFilter>,
     /// 窗口当前位置大小（内存态，由 flush 周期/退出时落盘）
     bounds: Mutex<Option<config::WindowBounds>>,
     /// 已落盘的位置大小（去重，避免无变化时反复写盘）
@@ -52,6 +54,7 @@ impl Default for OverlayState {
         Self {
             clickthrough: Mutex::new(false),
             style: Mutex::new(config::OverlayStyle::default()),
+            filter: Mutex::new(config::DanmakuFilter::default()),
             bounds: Mutex::new(None),
             saved_bounds: Mutex::new(None),
         }
@@ -156,6 +159,24 @@ fn overlay_set_style(
     *state.style.lock().unwrap() = style.clone();
     let _ = app.emit("overlay-style", &style);
     config::save_overlay_style(&app, &style)
+}
+
+/// 读取当前弹幕过滤配置
+#[tauri::command]
+fn danmaku_get_filter(state: State<'_, OverlayState>) -> config::DanmakuFilter {
+    state.filter.lock().unwrap().clone()
+}
+
+/// 更新弹幕过滤配置：广播给 Overlay 窗口（实时生效）并持久化
+#[tauri::command]
+fn danmaku_set_filter(
+    app: AppHandle,
+    state: State<'_, OverlayState>,
+    filter: config::DanmakuFilter,
+) -> Result<(), String> {
+    *state.filter.lock().unwrap() = filter.clone();
+    let _ = app.emit("danmaku-filter", &filter);
+    config::save_danmaku_filter(&app, &filter)
 }
 
 /// 查询 Overlay 当前尺寸（逻辑像素）
@@ -431,6 +452,7 @@ pub fn run() {
             {
                 let ov = app.state::<OverlayState>();
                 *ov.style.lock().unwrap() = cfg.overlay_style.clone();
+                *ov.filter.lock().unwrap() = cfg.danmaku_filter.clone();
             }
 
             // Overlay：透明 / 无边框 / 置顶 / 可调整 / 跳过任务栏，恢复上次位置
@@ -563,6 +585,8 @@ pub fn run() {
             overlay_set_always_on_top,
             overlay_get_style,
             overlay_set_style,
+            danmaku_get_filter,
+            danmaku_set_filter,
             overlay_get_size,
             overlay_set_size,
             get_connection_status,
