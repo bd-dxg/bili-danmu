@@ -33,14 +33,15 @@ pub struct HostInfo {
     pub wss_port: u16,
 }
 
-/// 构建带 cookie 存储与浏览器 UA/Referer/Origin 的 HTTP 客户端
+/// 构建带浏览器 UA/Referer/Origin 的 HTTP 客户端
 ///
 /// 请求头三件套（UA/Referer/Origin）缺一不可：B 站直播接口对无浏览器化请求头的
-/// 请求会返回 code:-352（已登录却提示 cookie 无效多由此而来，参考 DanmuFree 注释）
+/// 请求会返回 code:-352（已登录却提示 cookie 无效多由此而来，参考 DanmuFree 注释）。
+/// 注意不启用 cookie_store：登录 Cookie 由登录流程手动提取后全程经显式 Cookie
+/// header 传递（见 qr_poll / fetch_danmu_conf），避免 store 与手动 header 语义混淆。
 pub fn http_client() -> reqwest::Client {
     reqwest::Client::builder()
         .user_agent(UA)
-        .cookie_store(true)
         .default_headers({
             let mut h = reqwest::header::HeaderMap::new();
             h.insert(
@@ -132,7 +133,7 @@ async fn fetch_via_danmu_info_signed(
         .map_err(|e| format!("nav 响应解析失败: {e}"))?;
     let (img_key, sub_key) =
         crate::bilibili::wbi::parse_wbi_keys(&nav).ok_or_else(|| "nav 缺少 wbi_img".to_string())?;
-    let mixin = crate::bilibili::wbi::mixin_key(&img_key, &sub_key);
+    let mixin = crate::bilibili::wbi::mixin_key(&img_key, &sub_key)?;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
@@ -277,9 +278,15 @@ async fn connect_once(
     cancel: CancellationToken,
 ) -> Result<(), String> {
     let url = format!("wss://{}:{}/sub", host.host, host.wss_port);
-    let (mut ws, _resp) = tokio_tungstenite::connect_async(&url)
-        .await
-        .map_err(|e| format!("WebSocket 连接 {url} 失败: {e}"))?;
+    // 连接带 10s 超时：服务器不可达时快速失败，避免 run_ws_session 串行遍历
+    // host 列表时每个挂起等系统超时（最坏累计分钟级无反馈）
+    let (mut ws, _resp) = tokio::time::timeout(
+        Duration::from_secs(10),
+        tokio_tungstenite::connect_async(&url),
+    )
+    .await
+    .map_err(|_| format!("WebSocket 连接 {url} 超时"))?
+    .map_err(|e| format!("WebSocket 连接 {url} 失败: {e}"))?;
 
     // 1. 发送认证包（uid 使用登录用户 UID，游客 0 无法收到弹幕）
     let auth = serde_json::json!({
@@ -354,14 +361,9 @@ fn handle_frame(app: &tauri::AppHandle, room_id: u32, data: &[u8]) -> Result<(),
             OP_MESSAGE => {
                 for body in parser::expand_packet(&p)? {
                     for ev in parser::parse_payload(&body)? {
-                        match ev {
-                            BilibiliEvent::Danmaku(d) => {
-                                let _ = app.emit("danmaku", d);
-                            }
-                            BilibiliEvent::Other(cmd) => {
-                                eprintln!("[bilibili] 忽略命令: {cmd}");
-                            }
-                        }
+                        // 单变体：所有事件都是弹幕
+                        let BilibiliEvent::Danmaku(d) = ev;
+                        let _ = app.emit("danmaku", d);
                     }
                 }
             }

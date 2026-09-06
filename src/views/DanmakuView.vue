@@ -37,19 +37,36 @@ const FONT_CHOICES = [
 ];
 
 let tipTimer: ReturnType<typeof setTimeout> | undefined;
+// 样式/尺寸设置失败提示
+const opError = ref("");
+
+function showOpError(e: unknown) {
+  opError.value = String(e);
+  if (tipTimer) clearTimeout(tipTimer);
+  tipTimer = setTimeout(() => (opError.value = ""), 3000);
+}
 
 async function onSizeCommit() {
-  await invoke("overlay_set_size", {
-    width: winSize.value.width,
-    height: winSize.value.height,
-  });
+  try {
+    await invoke("overlay_set_size", {
+      width: winSize.value.width,
+      height: winSize.value.height,
+    });
+  } catch (e) {
+    showOpError(e);
+  }
 }
 
 async function apply() {
-  await invoke("overlay_set_style", { style: { ...style.value } });
-  savedTip.value = true;
-  if (tipTimer) clearTimeout(tipTimer);
-  tipTimer = setTimeout(() => (savedTip.value = false), 1200);
+  try {
+    await invoke("overlay_set_style", { style: { ...style.value } });
+    opError.value = "";
+    savedTip.value = true;
+    if (tipTimer) clearTimeout(tipTimer);
+    tipTimer = setTimeout(() => (savedTip.value = false), 1200);
+  } catch (e) {
+    showOpError(e);
+  }
 }
 
 function onFontSizeChange() {
@@ -111,6 +128,7 @@ onMounted(async () => {
 
 <template>
   <div class="danmaku-page">
+    <p v-if="opError" class="error op-error">{{ opError }}</p>
     <div class="tabs">
       <button
         v-for="t in [
@@ -349,6 +367,10 @@ onMounted(async () => {
 .danmaku-page {
   display: flex;
   flex-direction: column;
+}
+
+.op-error {
+  margin-bottom: 10px;
 }
 
 /* 页内标签栏 */

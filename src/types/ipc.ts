@@ -7,8 +7,7 @@ export type RoomStatusEvent =
   | { state: "connecting"; roomId: number }
   /** roomId 为真实房间号（短号解析后） */
   | { state: "connected"; roomId: number }
-  | { state: "error"; roomId?: number; message: string }
-  | { state: "reconnecting"; roomId: number; attempt: number };
+  | { state: "error"; roomId?: number; message: string };
 
 /** 弹幕事件（Rust → Vue，事件名 danmaku） */
 export interface DanmakuEvent {

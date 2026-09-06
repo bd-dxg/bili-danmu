@@ -4,6 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
 
 /// B 站登录态（游客为空）
@@ -85,6 +86,11 @@ pub struct ConfigFile {
     pub overlay_bounds: Option<WindowBounds>,
 }
 
+/// 配置读写互斥锁：save_* 均为「读整份 → 改字段 → 写整份」，并发交错会互相覆盖
+/// （如拖动 Overlay 的 2s 落盘与设置样式同时保存）。
+/// 加锁的公共入口调用 *_unlocked 内部实现，避免 std Mutex 嵌套死锁。
+static CFG_LOCK: Mutex<()> = Mutex::new(());
+
 fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
     let dir = app
         .path()
@@ -93,8 +99,18 @@ fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join("config.json"))
 }
 
+/// 加锁（互斥量中毒时恢复继续使用）
+fn lock_cfg() -> std::sync::MutexGuard<'static, ()> {
+    CFG_LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// 读取配置文件（不存在/损坏返回默认）
 pub fn load_config(app: &AppHandle) -> ConfigFile {
+    let _g = lock_cfg();
+    load_config_unlocked(app)
+}
+
+fn load_config_unlocked(app: &AppHandle) -> ConfigFile {
     let path = match config_path(app) {
         Ok(p) => p,
         Err(_) => return ConfigFile::default(),
@@ -105,41 +121,57 @@ pub fn load_config(app: &AppHandle) -> ConfigFile {
     }
 }
 
-/// 保存配置文件
-pub fn save_config(app: &AppHandle, cfg: &ConfigFile) -> Result<(), String> {
+/// 先写临时文件再改名落盘，避免中途崩溃留下损坏的配置文件
+fn save_config_unlocked(app: &AppHandle, cfg: &ConfigFile) -> Result<(), String> {
     let path = config_path(app)?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("创建配置目录失败: {e}"))?;
     }
     let content =
         serde_json::to_string_pretty(cfg).map_err(|e| format!("序列化配置失败: {e}"))?;
-    std::fs::write(&path, content).map_err(|e| format!("写入配置文件失败: {e}"))
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, &content).map_err(|e| format!("写入临时配置失败: {e}"))?;
+    match std::fs::rename(&tmp, &path) {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            // Windows 下 rename 不覆盖已存在文件：删除旧配置后重试；
+            // 仍失败（罕见）则回退直接写，保证配置能落盘
+            let _ = std::fs::remove_file(&path);
+            std::fs::rename(&tmp, &path)
+                .or_else(|_| std::fs::write(&path, &content))
+                .map_err(|e| format!("写入配置文件失败: {e}"))
+        }
+    }
 }
 
 /// 保存登录态
 pub fn save_auth(app: &AppHandle, auth: &AuthInfo) -> Result<(), String> {
-    let mut cfg = load_config(app);
+    let _g = lock_cfg();
+    let mut cfg = load_config_unlocked(app);
     cfg.auth = Some(auth.clone());
-    save_config(app, &cfg)
+    save_config_unlocked(app, &cfg)
 }
 
 /// 清除登录态
 pub fn clear_auth(app: &AppHandle) -> Result<(), String> {
-    let mut cfg = load_config(app);
+    let _g = lock_cfg();
+    let mut cfg = load_config_unlocked(app);
     cfg.auth = None;
-    save_config(app, &cfg)
+    save_config_unlocked(app, &cfg)
 }
 
 /// 保存 Overlay 样式
 pub fn save_overlay_style(app: &AppHandle, style: &OverlayStyle) -> Result<(), String> {
-    let mut cfg = load_config(app);
+    let _g = lock_cfg();
+    let mut cfg = load_config_unlocked(app);
     cfg.overlay_style = style.clone();
-    save_config(app, &cfg)
+    save_config_unlocked(app, &cfg)
 }
 
 /// 保存 Overlay 窗口位置大小
 pub fn save_overlay_bounds(app: &AppHandle, bounds: &WindowBounds) -> Result<(), String> {
-    let mut cfg = load_config(app);
+    let _g = lock_cfg();
+    let mut cfg = load_config_unlocked(app);
     cfg.overlay_bounds = Some(*bounds);
-    save_config(app, &cfg)
+    save_config_unlocked(app, &cfg)
 }

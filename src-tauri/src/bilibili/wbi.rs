@@ -16,13 +16,21 @@ pub const MIXIN_KEY_ENC_TAB: [usize; 64] = [
 ];
 
 /// img_key + sub_key → mixin_key
-pub fn mixin_key(img_key: &str, sub_key: &str) -> String {
+///
+/// 重排表索引覆盖 0..=63，要求拼接后至少 64 字节（B 站现为 32+32 字符）；
+/// 长度不足说明上游格式已变化，返回错误而非索引越界 panic。
+pub fn mixin_key(img_key: &str, sub_key: &str) -> Result<String, String> {
     let raw = format!("{img_key}{sub_key}");
     let bytes = raw.as_bytes();
-    MIXIN_KEY_ENC_TAB[..32]
+    if bytes.len() < 64 {
+        return Err(format!(
+            "wbi key 长度异常（img={img_key} sub={sub_key}），可能接口已改版"
+        ));
+    }
+    Ok(MIXIN_KEY_ENC_TAB[..32]
         .iter()
         .map(|&i| bytes[i] as char)
-        .collect()
+        .collect())
 }
 
 /// 对参数做 WBI 签名，返回可直接拼到 URL 的 query（含 w_rid）
