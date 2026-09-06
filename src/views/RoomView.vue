@@ -17,7 +17,6 @@ const statusText: Record<string, string> = {
   disconnected: "未连接",
   connecting: "连接中…",
   connected: "已连接",
-  reconnecting: "正在重连",
   error: "连接失败",
 };
 
@@ -114,7 +113,7 @@ onUnmounted(() => {
         class="dot"
         :class="{
           green: status.state === 'connected',
-          yellow: status.state === 'connecting' || status.state === 'reconnecting',
+          yellow: status.state === 'connecting',
           red: status.state === 'error',
           gray: status.state === 'disconnected',
         }"

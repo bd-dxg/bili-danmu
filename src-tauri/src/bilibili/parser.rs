@@ -66,15 +66,13 @@ pub fn parse_payload(bytes: &[u8]) -> Result<Vec<BilibiliEvent>, String> {
     let mut events = Vec::new();
     for item in items {
         let cmd = item.get("cmd").and_then(|c| c.as_str()).unwrap_or("");
-        match cmd {
-            "DANMU_MSG" => {
-                if let Some(d) = parse_danmaku(item) {
-                    events.push(BilibiliEvent::Danmaku(d));
-                }
+        if cmd == "DANMU_MSG" {
+            if let Some(d) = parse_danmaku(item) {
+                events.push(BilibiliEvent::Danmaku(d));
             }
-            "" => { /* 无 cmd 的消息体忽略 */ }
-            other => events.push(BilibiliEvent::Other(other.to_string())),
         }
+        // 其它命令（礼物/进场/SC 等）V1 无消费者，直接忽略——逐条构造事件
+        // 并打印日志会在大房间高频事件流下造成日志洪泛与无谓分配
     }
     Ok(events)
 }
@@ -168,11 +166,116 @@ fn parse_danmaku(v: &serde_json::Value) -> Option<Danmaku> {
     })
 }
 
-/// 解析字段缺失时的时间戳兑底（系统时间）
-/// 解析字段缺失时的时间戳兑底（系统时间）
+/// 解析字段缺失时的时间戳兜底（系统时间）
 fn fallback_now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 构造一份贴近 B 站真实结构的 DANMU_MSG（info 下标映射见 parse_danmaku 注释）
+    fn sample_danmu(content: serde_json::Value) -> serde_json::Value {
+        let mut info: Vec<serde_json::Value> = vec![
+            // 0: [mode, 弹幕类型, fontsize, 颜色, 时间戳(ms), 随机id]
+            serde_json::json!([0, 1, 25, 16750848, 1700000123456i64, 98765]),
+            // 1: 内容（字符串或 [字符串]）
+            content,
+            // 2: [uid, uname, 是否房管]
+            serde_json::json!([10086, "测试用户", 1]),
+            // 3: [勋章等级, 勋章名, 主播名, 勋章房间id]
+            serde_json::json!([20, "测试牌", "主播名", 9999]),
+            // 4: [用户等级, ...]
+            serde_json::json!([42, 0, 0, ">50000"]),
+            serde_json::json!([]),  // 5
+            serde_json::json!([]),  // 6
+            serde_json::json!(3),   // 7: 舰队等级（3=舰长 2=提督 1=总督）
+        ];
+        // 8..=15 填充空数组，使 16 号位为荣耀等级
+        for _ in 8..16 {
+            info.push(serde_json::json!([]));
+        }
+        info.push(serde_json::json!([7])); // 16: [荣耀等级]
+        serde_json::json!({ "cmd": "DANMU_MSG", "info": info })
+    }
+
+    fn parse_danmu(v: serde_json::Value) -> Danmaku {
+        let payload = v.to_string();
+        let events = parse_payload(payload.as_bytes()).expect("payload 应可解析");
+        let mut danmu = events.into_iter().filter_map(|e| match e {
+            BilibiliEvent::Danmaku(d) => Some(d),
+        });
+        danmu.next().expect("应产出一条弹幕")
+    }
+
+    #[test]
+    fn 完整字段映射() {
+        let d = parse_danmu(sample_danmu(serde_json::json!("测试弹幕")));
+        assert_eq!(d.id, "1700000123-10086-98765");
+        assert_eq!(d.content, "测试弹幕");
+        assert_eq!(d.username, "测试用户");
+        assert_eq!(d.timestamp, 1700000123, "毫秒时间戳应转秒");
+        assert_eq!(d.color.as_deref(), Some("#FF9900"));
+        assert_eq!(d.medal_level, Some(20));
+        assert_eq!(d.medal_name.as_deref(), Some("测试牌"));
+        assert_eq!(d.medal_room_id, Some(9999));
+        assert_eq!(d.user_level, Some(42));
+        assert_eq!(d.guard_level, Some(3));
+        assert_eq!(d.wealth_level, Some(7));
+        assert!(d.is_admin, "房管标记应从 info[2][2] 解析");
+    }
+
+    #[test]
+    fn 内容为数组形态() {
+        let d = parse_danmu(sample_danmu(serde_json::json!(["数组弹幕"])));
+        assert_eq!(d.content, "数组弹幕");
+    }
+
+    #[test]
+    fn 秒级时间戳不除千() {
+        let mut v = sample_danmu(serde_json::json!("x"));
+        v["info"][0][4] = serde_json::json!(1700000123); // 已是秒
+        let d = parse_danmu(v);
+        assert_eq!(d.timestamp, 1700000123);
+    }
+
+    #[test]
+    fn 字段缺失容错() {
+        let info = serde_json::json!([
+            [0, 1, 25, 16777215, 1700000123456i64, 1],
+            "只有内容",
+            [],
+            []
+        ]);
+        let d = parse_danmu(serde_json::json!({ "cmd": "DANMU_MSG", "info": info }));
+        assert_eq!(d.content, "只有内容");
+        assert_eq!(d.username, "");
+        assert_eq!(d.timestamp, 1700000123);
+        assert!(!d.is_admin);
+    }
+
+    #[test]
+    fn 空内容被丢弃() {
+        let v = sample_danmu(serde_json::json!("   "));
+        let payload = v.to_string();
+        let events = parse_payload(payload.as_bytes()).unwrap();
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn 非弹幕命令被忽略() {
+        let payload = serde_json::json!({ "cmd": "SEND_GIFT" }).to_string();
+        let events = parse_payload(payload.as_bytes()).unwrap();
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn 非utf8或坏json返回错误() {
+        assert!(parse_payload(b"\xff\xfe").is_err());
+        assert!(parse_payload(b"not json").is_err());
+    }
 }

@@ -235,14 +235,14 @@ async fn qr_poll(
             let uname = bilibili::login::fetch_uname(&client, &cookies).await.ok();
             let auth = config::AuthInfo {
                 uid,
-                cookies,
+                cookies: cookies.clone(),
                 uname,
             };
-            config::save_auth(&app, &auth).map_err(|e| e)?;
+            config::save_auth(&app, &auth)?;
             *state.auth.lock().unwrap() = Some(auth);
-            Ok(bilibili::login::PollResult::Success {
-                cookies: uid.to_string(),
-            })
+            // 原样回传登录 Cookie 串（前端仅消费 status 字段，不需要关心内容）——
+            // 不复用 cookies 字段传 uid，保持与 login::PollResult 的字段语义一致
+            Ok(bilibili::login::PollResult::Success { cookies })
         }
         other => Ok(other),
     }
@@ -272,19 +272,11 @@ async fn connect_room(
     }
     let _ = app.emit("room-status", json!({ "state": "connecting", "roomId": room_id }));
 
-    // 读取当前登录态（游客 uid=0 连上但收不到弹幕）
-    let (uid, cookies) = {
-        let auth = state.auth.lock().unwrap();
-        match auth.as_ref() {
-            Some(a) => (a.uid, a.cookies.clone()),
-            None => (0, String::new()),
-        }
-    };
-
     let cancel = CancellationToken::new();
     *state.cancel.lock().unwrap() = Some(cancel.clone());
 
-    spawn_connection(app.clone(), room_id, uid, cookies, cancel);
+    // 登录态由 spawn_connection 每次会话前实时读取（重连期间用户可登录/退出）
+    spawn_connection(app.clone(), room_id, cancel);
     Ok(())
 }
 
@@ -298,56 +290,123 @@ fn disconnect_room(app: AppHandle, state: State<'_, AppState>) {
     let _ = app.emit("room-status", json!({ "state": "disconnected" }));
 }
 
-/// 完整连接流程：解析 → 鉴权 → WS 会话；结束后清理状态并上报结果
-fn spawn_connection(
-    app: AppHandle,
-    short_id: u32,
-    uid: i64,
-    cookies: String,
-    cancel: CancellationToken,
-) {
+/// 弹幕会话失败（断线/鉴权失败）自动重连的最大尝试次数；退避累计约 2.5 分钟后放弃并报错
+const MAX_CONNECT_ATTEMPTS: u32 = 10;
+/// 重连退避上限（秒），退避序列 1/2/4/…/封顶 30s
+const RECONNECT_MAX_BACKOFF_SECS: u64 = 30;
+
+/// 完整连接流程：解析房间 → 弹幕会话（断线自动退避重连）→ 收尾清理状态并上报
+///
+/// 房间解析失败不重试（房间不存在时重试无意义）；弹幕会话断开后按
+/// 1/2/4/…/30s 退避静默自动重连（重连期间前端保持已连接语义，断流抖动自动恢复），
+/// 超过 MAX_CONNECT_ATTEMPTS 次仍失败才报 error；用户可随时断开（取消令牌中止重试）。
+fn spawn_connection(app: AppHandle, short_id: u32, cancel: CancellationToken) {
     tauri::async_runtime::spawn(async move {
         let client = bilibili::client::http_client();
 
-        let result: Result<(), String> = async {
-            // 1. 短号解析真实房间号
-            let resolved = bilibili::client::resolve_room(&client, short_id).await?;
-            if resolved.live_status == 0 {
-                eprintln!(
-                    "[room] 房间 {} ({}) 当前未开播，仍尝试连接",
-                    short_id, resolved.room_id
-                );
+        // 1. 短号解析真实房间号
+        let resolved = match bilibili::client::resolve_room(&client, short_id).await {
+            Ok(r) => r,
+            Err(e) => {
+                finish_connection(&app, &cancel, Err(e));
+                return;
             }
-            // 2. 弹幕服务器配置（登录态优先；失败自动回退游客 token）
+        };
+        if resolved.live_status == 0 {
+            eprintln!(
+                "[room] 房间 {} ({}) 当前未开播，仍尝试连接",
+                short_id, resolved.room_id
+            );
+        }
+
+        // 2. 弹幕会话循环：断线自动重连，直到成功 / 用户断开 / 重试耗尽
+        let mut attempt = 0u32;
+        let result: Result<(), String> = loop {
+            if attempt > 0 {
+                // 退避等待（可取消）
+                let backoff = (1u64 << attempt.saturating_sub(1).min(5))
+                    .min(RECONNECT_MAX_BACKOFF_SECS);
+                eprintln!("[bilibili] 会话断开，{backoff}s 后重连（第 {attempt} 次）");
+                tokio::select! {
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(backoff)) => {}
+                    _ = cancel.cancelled() => break Ok(()),
+                }
+            }
+            if cancel.is_cancelled() {
+                break Ok(());
+            }
+
+            // 每次会话前实时读取登录态（游客 uid=0 连上但收不到弹幕）
+            let (uid, cookies) = {
+                let st = app.state::<AppState>();
+                let auth = st.auth.lock().unwrap();
+                match auth.as_ref() {
+                    Some(a) => (a.uid, a.cookies.clone()),
+                    None => (0, String::new()),
+                }
+            };
+
+            // 弹幕服务器配置（登录态优先；失败自动回退游客 token）
             let (conf, guest_mode) =
-                bilibili::client::fetch_danmu_conf(&client, resolved.room_id, &cookies).await?;
+                match bilibili::client::fetch_danmu_conf(&client, resolved.room_id, &cookies).await
+                {
+                    Ok(v) => v,
+                    Err(e) => {
+                        attempt += 1;
+                        if attempt >= MAX_CONNECT_ATTEMPTS {
+                            break Err(e);
+                        }
+                        continue;
+                    }
+                };
             // 游客级 token 必须配 uid=0，否则服务器断开连接
             let auth_uid = if guest_mode { 0 } else { uid };
-            // 3. WS 会话（认证成功后 client 会 emit connected；此处持续到断开/取消）
-            bilibili::client::run_ws_session(&app, resolved.room_id, auth_uid, conf, cancel.clone())
-                .await?;
-            Ok(())
-        }
-        .await;
 
-        let cancelled = cancel.is_cancelled();
-        // 收尾：只有仍在进行中（未被手动断开）的状态才需要重置
-        let st = app.state::<AppState>();
-        let mut st = st.status.lock().unwrap();
-        if *st != RoomStatus::Disconnected {
-            *st = RoomStatus::Disconnected;
-            drop(st);
-            match (cancelled, result) {
-                (true, _) | (_, Ok(())) => {
-                    let _ = app.emit("room-status", json!({ "state": "disconnected" }));
-                }
-                (false, Err(msg)) => {
-                    eprintln!("[bilibili] 连接结束: {msg}");
-                    let _ = app.emit("room-status", json!({ "state": "error", "message": msg }));
+            // WS 会话（认证成功后 client 会 emit connected）；断开返回 Err 进入重连
+            match bilibili::client::run_ws_session(
+                &app,
+                resolved.room_id,
+                auth_uid,
+                conf,
+                cancel.clone(),
+            )
+            .await
+            {
+                Ok(()) => break Ok(()), // 被取消，正常结束
+                Err(e) => {
+                    attempt += 1;
+                    if attempt >= MAX_CONNECT_ATTEMPTS {
+                        break Err(e);
+                    }
                 }
             }
-        }
+        };
+
+        finish_connection(&app, &cancel, result);
     });
+}
+
+/// 连接任务收尾：仅当自己仍是当前连接任务（取消令牌未被换走）时重置状态并上报
+///
+/// disconnect_room 会 take 令牌、新连接会替换令牌——若收尾时状态里存的令牌
+/// 已不是自己，说明已被断开或已有新连接接管，绝不能重置状态，否则会把新连接的
+/// Connected 误清为 Disconnected（「断开 → 立即重连」时序下的旧任务竞态）。
+fn finish_connection(app: &AppHandle, cancel: &CancellationToken, result: Result<(), String>) {
+    let st = app.state::<AppState>();
+    let is_current = st.cancel.lock().unwrap().as_ref() == Some(cancel);
+    if !is_current {
+        return;
+    }
+    *st.status.lock().unwrap() = RoomStatus::Disconnected;
+    match result {
+        Ok(()) => {
+            let _ = app.emit("room-status", json!({ "state": "disconnected" }));
+        }
+        Err(msg) => {
+            eprintln!("[bilibili] 连接结束: {msg}");
+            let _ = app.emit("room-status", json!({ "state": "error", "message": msg }));
+        }
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

@@ -39,10 +39,9 @@ pub struct Danmaku {
 
 /// 解析出的 B 站事件
 ///
-/// V1 只消费 Danmaku；其他事件记录日志但不对外发送
+/// V1 只消费 Danmaku；其余命令（礼物/进场/SC 等）在 parser 层直接忽略，
+/// 避免高频事件流造成日志洪泛与无谓分配
 #[derive(Debug, Clone)]
 pub enum BilibiliEvent {
     Danmaku(Danmaku),
-    /// 其他命令（礼物/进场/SC 等），仅记录
-    Other(String),
 }

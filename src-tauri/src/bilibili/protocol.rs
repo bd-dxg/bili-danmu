@@ -76,7 +76,10 @@ pub fn decode_stream(buf: &[u8]) -> Result<Vec<Packet>, String> {
     while off + HEADER_LEN <= buf.len() {
         let total = u32::from_be_bytes([buf[off], buf[off + 1], buf[off + 2], buf[off + 3]]) as usize;
         if total < HEADER_LEN || off + total > buf.len() {
-            break; // 数据不完整，等待下一帧（B 站按包发送，正常不会出现）
+            // 尾部数据不完整（B 站按包发送，正常不会出现）：记录并丢弃，
+            // 不静默吞掉——若频繁出现说明协议行为已变化，便于排查
+            eprintln!("[protocol] 帧尾含不完整/畸形包，丢弃 {} 字节", buf.len() - off);
+            break;
         }
         out.push(decode_packet(&buf[off..off + total])?);
         off += total;
