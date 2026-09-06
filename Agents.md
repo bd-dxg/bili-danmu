@@ -30,7 +30,7 @@
 - 多窗口：根目录 `index.html`（主窗口）+ `overlay.html`（透明悬浮窗），Tauri 配置见 `src-tauri/tauri.conf.json` 与 `capabilities/default.json`
 - IPC 双向类型约定：Rust command 与 `src/types/ipc.ts` 保持一致，改动协议时两端同步
 - 注释、commit、PRD（`prd.md`）一律简体中文
-- PRD 即功能需求来源：已完成/规划状态以 `README.md` 表格和 `prd.md` 为准（TTS 朗读、滚动弹幕、屏蔽过滤均为未做项）
+- PRD 即功能需求来源：已完成/规划状态以 `README.md` 表格和 `prd.md` 为准（TTS 朗读、滚动弹幕、用户屏蔽为未做项；弹幕过滤已完成）
 
 ## 注意事项
 
