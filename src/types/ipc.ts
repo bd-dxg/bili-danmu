@@ -119,6 +119,25 @@ export interface TtsConfig {
   filter: DanmakuFilter;
 }
 
+/** 仪表盘状态快照（get_dashboard_status 返回，主窗口直播间页底部只读展示） */
+export interface DashboardStatus {
+  overlay: {
+    /** 弹幕窗是否可见 */
+    visible: boolean;
+    /** 鼠标穿透是否开启 */
+    clickthrough: boolean;
+    /** 是否始终置顶 */
+    always_on_top: boolean;
+  };
+  tts: {
+    enabled: boolean;
+    /** 朗读筛选条件（与显示筛选相互独立） */
+    filter: DanmakuFilter;
+  };
+  /** 最近 10 秒接收到的弹幕条数 */
+  danmaku_rate: number;
+}
+
 /** TTS 默认配置 */
 export const DEFAULT_TTS_CONFIG: TtsConfig = {
   enabled: false,
