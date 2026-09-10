@@ -37,12 +37,12 @@
 }
 
 h2 {
-  font-size: 16px;
+  font-size: 18px;
   margin-bottom: 6px;
 }
 
 .intro {
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.8;
   color: var(--text-dim);
 }
@@ -55,7 +55,7 @@ h2 {
 }
 
 .card h3 {
-  font-size: 13px;
+  font-size: 15px;
   color: var(--accent);
   margin-bottom: 8px;
 }
@@ -65,7 +65,7 @@ h2 {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.7;
 }
 
@@ -79,7 +79,7 @@ h2 {
 }
 
 .stack {
-  font-size: 13px;
+  font-size: 15px;
   color: var(--text-dim);
   line-height: 1.7;
 }

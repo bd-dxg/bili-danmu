@@ -117,10 +117,10 @@ fn sync_sender_docked(app: &AppHandle) {
 }
 
 /// 发送框相对弹幕窗的缩进/右距/高度（物理 px），随弹幕字号缩放。
-/// 缩进 = 容器 padding 6px + role-slot 4em + 0.35em 间距，与 OverlayApp.vue 正文列起点一致。
+/// 缩进 = 容器 padding 6px + role-slot 4.8em + 0.35em 间距，与 OverlayApp.vue 正文列起点一致。
 fn sender_layout_metrics(app: &AppHandle, scale: f64) -> (u32, u32, u32) {
     let font_size = app.state::<OverlayState>().style.lock().unwrap().font_size;
-    let indent = ((6.0 + 4.35 * font_size) * scale).round() as u32;
+    let indent = ((6.0 + 5.15 * font_size) * scale).round() as u32;
     let right_pad = (6.0 * scale).round() as u32;
     let h = ((font_size * 3.8 + 8.0) * scale).round() as u32;
     (indent, right_pad, h)
@@ -529,7 +529,7 @@ pub fn run() {
                 WebviewUrl::App("overlay.html".into()),
             )
             .title("bili-danmu overlay")
-            .inner_size(480.0, 240.0)
+            .inner_size(700.0, 400.0)
             .position(80.0, 80.0)
             .decorations(false)
             .transparent(true)

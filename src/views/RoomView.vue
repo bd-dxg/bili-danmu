@@ -145,7 +145,7 @@ onUnmounted(() => {
   border-radius: 6px;
   padding: 6px 10px;
   margin-bottom: 16px;
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .login-bar .ok {
@@ -160,7 +160,7 @@ onUnmounted(() => {
   background: none;
   border: none;
   color: var(--accent);
-  font-size: 13px;
+  font-size: 15px;
   cursor: pointer;
   padding: 2px 6px;
   border-radius: 4px;
@@ -171,7 +171,7 @@ onUnmounted(() => {
 }
 
 h2 {
-  font-size: 16px;
+  font-size: 18px;
   margin-bottom: 14px;
 }
 
@@ -187,7 +187,7 @@ h2 {
   border-radius: 6px;
   color: var(--text);
   padding: 8px 10px;
-  font-size: 14px;
+  font-size: 16px;
   outline: none;
 }
 
@@ -206,7 +206,7 @@ h2 {
   border: none;
   border-radius: 6px;
   padding: 8px 18px;
-  font-size: 14px;
+  font-size: 16px;
   color: #fff;
 }
 
@@ -233,7 +233,7 @@ h2 {
 
 .error {
   color: var(--red);
-  font-size: 13px;
+  font-size: 15px;
   margin-top: 8px;
 }
 
@@ -242,7 +242,7 @@ h2 {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .dot {
@@ -266,6 +266,6 @@ h2 {
 
 .room-tag {
   color: var(--text-faint);
-  font-size: 12px;
+  font-size: 14px;
 }
 </style>

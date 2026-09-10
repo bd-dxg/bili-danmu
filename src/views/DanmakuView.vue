@@ -507,7 +507,7 @@ onMounted(async () => {
   background: none;
   border: none;
   color: var(--text-dim);
-  font-size: 15px;
+  font-size: 17px;
   font-weight: bold;
   padding: 8px 16px 10px;
   border-bottom: 2px solid transparent;
@@ -539,7 +539,7 @@ onMounted(async () => {
   gap: 12px;
   padding: 12px 0;
   border-bottom: 1px solid var(--border);
-  font-size: 14px;
+  font-size: 16px;
 }
 
 .setting-row:last-of-type {
@@ -561,7 +561,7 @@ onMounted(async () => {
   min-width: 42px;
   text-align: right;
   color: var(--text-dim);
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .select {
@@ -570,7 +570,7 @@ onMounted(async () => {
   border-radius: 6px;
   color: var(--text);
   padding: 6px 10px;
-  font-size: 13px;
+  font-size: 15px;
   outline: none;
   min-width: 150px;
 }
@@ -605,7 +605,7 @@ onMounted(async () => {
 }
 
 .tip {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text-faint);
   padding: 4px 0 10px;
   line-height: 1.6;
@@ -619,7 +619,7 @@ onMounted(async () => {
   border-radius: 5px;
   color: var(--text);
   padding: 3px 6px;
-  font-size: 13px;
+  font-size: 15px;
   outline: none;
   text-align: center;
 }
@@ -641,7 +641,7 @@ onMounted(async () => {
   border-radius: 6px;
   color: var(--text);
   padding: 8px 10px;
-  font-size: 13px;
+  font-size: 15px;
   font-family: inherit;
   line-height: 1.6;
   resize: vertical;
@@ -662,7 +662,7 @@ onMounted(async () => {
   border: none;
   border-radius: 6px;
   padding: 6px 18px;
-  font-size: 13px;
+  font-size: 15px;
   color: #fff;
   background: var(--accent);
   cursor: pointer;
@@ -674,13 +674,13 @@ onMounted(async () => {
 
 .error {
   color: var(--red);
-  font-size: 13px;
+  font-size: 15px;
   padding: 6px 0 0;
 }
 
 .saved {
   color: var(--green);
-  font-size: 12px;
+  font-size: 14px;
   padding-bottom: 10px;
 }
 </style>

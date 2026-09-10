@@ -132,13 +132,13 @@ onUnmounted(stopPolling);
 }
 
 h3 {
-  font-size: 15px;
+  font-size: 17px;
   margin-bottom: 6px;
 }
 
 .hint {
   color: var(--text-faint);
-  font-size: 12px;
+  font-size: 14px;
   margin-bottom: 14px;
 }
 
@@ -156,14 +156,14 @@ h3 {
   align-items: center;
   justify-content: center;
   color: var(--text-faint);
-  font-size: 13px;
+  font-size: 15px;
   background: var(--bg-elev);
   border-radius: 6px;
 }
 
 .phase {
   margin-top: 12px;
-  font-size: 13px;
+  font-size: 15px;
   min-height: 18px;
   color: var(--text-dim);
 }
@@ -188,7 +188,7 @@ h3 {
   border: none;
   border-radius: 6px;
   padding: 7px 14px;
-  font-size: 13px;
+  font-size: 15px;
   cursor: pointer;
 }
 

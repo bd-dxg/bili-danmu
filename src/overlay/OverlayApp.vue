@@ -122,17 +122,21 @@ function shouldShowDanmaku(d: DanmakuEvent, f: DanmakuFilter): boolean {
   );
 }
 
-/// 身份前缀列表（可叠加）：房管 + 舰/提督/总督，按展示顺序
+/// 身份前缀列表（可叠加）：房管 + 舰长/提督/总督，按展示顺序
 function rolesOf(d: DisplayDanmaku): { label: string; cls: string }[] {
   const roles: { label: string; cls: string }[] = [];
   if (d.is_admin) {
-    roles.push({ label: "房", cls: "admin" });
+    roles.push({ label: "房管", cls: "admin" });
   }
   if (d.guard_level && d.guard_level >= 1) {
-    roles.push({
-      label: d.guard_level === 3 ? "舰" : d.guard_level === 2 ? "提督" : "总督",
-      cls: "guard",
-    });
+    // 舰队等级：3=舰长（蓝） 2=提督（紫） 1=总督（金红），三档配色区分
+    const guard =
+      d.guard_level === 3
+        ? { label: "舰长", cls: "guard-captain" }
+        : d.guard_level === 2
+          ? { label: "提督", cls: "guard-admiral" }
+          : { label: "总督", cls: "guard-governor" };
+    roles.push(guard);
   }
   return roles;
 }
@@ -169,6 +173,8 @@ onMounted(async () => {
   } catch {
     /* ignore */
   }
+  // 强制触发字体渲染重计算，避免首次加载时字体像素化
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   // 初始同步过滤配置
   try {
     filter.value = await invoke<DanmakuFilter>("danmaku_get_filter");
@@ -207,8 +213,10 @@ onUnmounted(() => {
     }"
     data-tauri-drag-region
   >
-    <!-- 常驻透明拖拽条：不在弹幕流内，弹幕高速刷新时也能稳定拖动窗口 -->
-    <div class="drag-strip" data-tauri-drag-region></div>
+    <!-- 常驻透明拖拽条：不在弹幕流内，弹幕高速刷新时也能稳定拖动窗口；移入时显示操作提示 -->
+    <div class="drag-strip" data-tauri-drag-region>
+      <span class="drag-hint">按住此区域可拖动弹幕窗位置</span>
+    </div>
     <div
       v-for="d in danmakuList"
       :key="d.id"
@@ -284,21 +292,41 @@ onUnmounted(() => {
 .drag-strip {
   position: absolute;
   top: 0;
-  left: 0;
+  /* 左端对齐正文列（跳过身份前缀列 role-slot 4.8em + 0.35em 间距），不覆盖房管/舰长徽章 */
+  left: calc(6px + 5.15em);
   right: 0;
-  height: 16px;
+  height: 1.4em;
   z-index: 5;
   cursor: move;
   background: transparent;
   border-bottom: 1px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
   transition:
     background 0.12s ease,
     border-color 0.12s ease;
 }
 
+/* 操作提示：默认淡出，鼠标移入悬浮窗时显示；pointer-events 穿透保证整条可拖动 */
+.drag-hint {
+  font-size: 0.8em;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.92);
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+  transition: opacity 0.12s ease;
+}
+
 .overlay-root:hover .drag-strip {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.55);
   border-bottom-color: rgba(255, 255, 255, 0.35);
+}
+
+.overlay-root:hover .drag-hint {
+  opacity: 1;
 }
 
 /* 身份前缀列：固定 4em 宽度；chip 靠右紧贴 LV，无前缀行整列留空 → LV 各行同列对齐 */
@@ -307,7 +335,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: flex-end;
   gap: 0.2em;
-  width: 4em;
+  width: 4.8em;
   margin-right: 0.35em;
   overflow: hidden;
 }
@@ -400,10 +428,10 @@ onUnmounted(() => {
   background: linear-gradient(180deg, #ffe08a, #f0b429);
 }
 
-/* 本房粉丝牌 */
+/* 本房粉丝牌：绿色（与提督紫拉开区分） */
 .chip.medal-room {
   color: #fff;
-  background: linear-gradient(180deg, #b06ff0, #7c4dd4);
+  background: linear-gradient(180deg, #4ade80, #16a34a);
 }
 
 /* 其它房粉丝牌 */
@@ -412,17 +440,28 @@ onUnmounted(() => {
   background: rgba(80, 80, 90, 0.9);
 }
 
-/* 身份标记：舰长（金）/房管（蓝）小色块；文字保持统一白色 */
+/* 身份标记：舰长（蓝）/提督（紫）/总督（金红）三档配色，文字保持统一白色 */
 .chip.role {
   color: #fff;
 }
 
-.chip.role.guard {
-  background: linear-gradient(180deg, #ffd75e, #c9961c);
-  color: #3a2c00;
+/* 舰长：蓝色（比房管蓝略深，避免与「房」混淆） */
+.chip.role.guard-captain {
+  background: linear-gradient(180deg, #4facfe, #1f6fd0);
 }
 
+/* 提督：紫色（比本房粉丝牌紫更艳） */
+.chip.role.guard-admiral {
+  background: linear-gradient(180deg, #c084fc, #7e22ce);
+}
+
+/* 总督：金渐变红（最高档） */
+.chip.role.guard-governor {
+  background: linear-gradient(180deg, #ffcc4d, #e4413a);
+}
+
+/* 房管：青绿色 teal（与舰长蓝拉开区分） */
 .chip.role.admin {
-  background: linear-gradient(180deg, #3aa0ff, #1d6fd6);
+  background: linear-gradient(180deg, #2dd4bf, #0d9488);
 }
 </style>
