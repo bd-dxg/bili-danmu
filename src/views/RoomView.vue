@@ -1,74 +1,23 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
-import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { RecentRoom, RoomStatusEvent } from "../types/ipc";
+import { onMounted } from "vue";
 import { refreshLogin, useLogin } from "../composables/useLogin";
+import { useRoomConnection } from "../composables/useRoomConnection";
 import StatusDashboard from "../components/StatusDashboard.vue";
 
+onMounted(refreshLogin);
+
 const { loggedIn, uid, uname, openLoginDialog, logout } = useLogin();
-const roomId = ref("");
-const busy = ref(false); // 连接/断开操作中
-const status = ref<RoomStatusEvent>({ state: "disconnected" });
-const errorMsg = ref("");
-// 最近连接过的直播间（Rust 持久化，输入框下方面包屑）
-const recentRooms = ref<RecentRoom[]>([]);
-
-let unlistenStatus: UnlistenFn | undefined;
-let unlistenRecent: UnlistenFn | undefined;
-
-// 连接中/已连接时锁定房间号输入框与最近面包屑：改号需先断开，避免输入框与实际连接目标不一致
-const locked = computed(
-  () => status.value.state === "connecting" || status.value.state === "connected",
-);
-
-const statusText: Record<string, string> = {
-  disconnected: "未连接",
-  connecting: "连接中…",
-  connected: "已连接",
-  error: "连接失败",
-};
-
-// target 为面包屑直连的房间号：回填输入框，保证输入框与连接目标一致
-async function connect(target?: number) {
-  if (target !== undefined) {
-    roomId.value = String(target);
-  }
-  const id = Number(roomId.value);
-  if (!Number.isInteger(id) || id <= 0) {
-    errorMsg.value = "请输入有效的直播间 ID";
-    return;
-  }
-  errorMsg.value = "";
-  busy.value = true;
-  try {
-    await invoke("connect_room", { roomId: id });
-  } catch (e) {
-    status.value = { state: "error", message: String(e) };
-  } finally {
-    busy.value = false;
-  }
-}
-
-async function disconnect() {
-  busy.value = true;
-  try {
-    await invoke("disconnect_room");
-  } catch (e) {
-    errorMsg.value = String(e);
-  } finally {
-    busy.value = false;
-  }
-}
-
-// 读取最近房间（连接成功后 Rust 侧已写入，含主播名）
-async function loadRecentRooms() {
-  try {
-    recentRooms.value = await invoke<RecentRoom[]>("get_recent_rooms");
-  } catch {
-    // 读取失败不影响连接功能，保持空列表
-  }
-}
+const {
+  roomId,
+  busy,
+  status,
+  errorMsg,
+  recentRooms,
+  locked,
+  statusText,
+  connect,
+  disconnect,
+} = useRoomConnection();
 
 // 退出登录：先断开直播连接，再清登录态（登录是收弹幕的前提）
 async function handleLogout() {
@@ -77,26 +26,6 @@ async function handleLogout() {
   }
   await logout();
 }
-
-onMounted(async () => {
-  await refreshLogin();
-  await loadRecentRooms();
-  unlistenStatus = await listen<RoomStatusEvent>("room-status", (e) => {
-    status.value = e.payload;
-    if (e.payload.state === "connected") {
-      errorMsg.value = "";
-    }
-  });
-  // 最近房间由 Rust 后台任务抽取（与连接并行，不阻塞弹幕会话），写完广播一次
-  unlistenRecent = await listen("recent-rooms-changed", () => {
-    void loadRecentRooms();
-  });
-});
-
-onUnmounted(() => {
-  unlistenStatus?.();
-  unlistenRecent?.();
-});
 </script>
 
 <template>
@@ -166,7 +95,7 @@ onUnmounted(() => {
           gray: status.state === 'disconnected',
         }"
       ></span>
-      <span>{{ statusText[status.state] ?? status.state }}</span>
+      <span>{{ statusText }}</span>
       <span v-if="status.state === 'connected'" class="room-tag">
         房间 {{ status.roomId }}（30s 心跳保活中）
       </span>
