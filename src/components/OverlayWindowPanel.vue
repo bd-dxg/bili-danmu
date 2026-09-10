@@ -150,23 +150,7 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-.size-control {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.size-control input[type="range"] {
-  width: 160px;
-  accent-color: var(--accent);
-}
-
-.value {
-  min-width: 42px;
-  text-align: right;
-  color: var(--text-dim);
-  font-size: 15px;
-}
+/* 滑块与数值标签见全局 src/styles/settings.css（.size-control / .value） */
 
 /* 只在本标签页内提示，不与页面顶部的样式/过滤保存提示混用 */
 .panel-error {

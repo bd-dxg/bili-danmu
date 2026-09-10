@@ -78,7 +78,7 @@ function applyFilter(next: DanmakuFilter) {
         </SettingRow>
 
         <SettingRow label="语速">
-          <div class="range-control">
+          <div class="size-control">
             <input
               v-model.number="config.rate_pct"
               type="range"
@@ -92,7 +92,7 @@ function applyFilter(next: DanmakuFilter) {
         </SettingRow>
 
         <SettingRow label="音量">
-          <div class="range-control">
+          <div class="size-control">
             <input
               v-model.number="config.volume_pct"
               type="range"
@@ -228,22 +228,9 @@ function applyFilter(next: DanmakuFilter) {
   cursor: default;
 }
 
-.range-control {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.range-control input[type="range"] {
-  width: 160px;
-  accent-color: var(--accent);
-}
-
 .value {
+  /* 数值带百分号 / 倍速后缀，比全局默认宽一点，避免拖动时数字宽度变化挤动滑块 */
   min-width: 52px;
-  text-align: right;
-  color: var(--text-dim);
-  font-size: 15px;
 }
 
 .num {

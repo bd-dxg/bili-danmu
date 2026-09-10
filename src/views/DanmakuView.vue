@@ -249,16 +249,9 @@ onMounted(async () => {
   margin-bottom: 10px;
 }
 
-/* 设置卡片 / 标签栏 / 开关 / 下拉 / 提示见全局 src/styles/settings.css */
+/* 设置卡片 / 标签栏 / 开关 / 下拉 / 提示 / 滑块 / 数值见全局 src/styles/settings.css */
 .select {
   min-width: 150px;
-}
-
-.value {
-  min-width: 42px;
-  text-align: right;
-  color: var(--text-dim);
-  font-size: 15px;
 }
 
 .color-picker {

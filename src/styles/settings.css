@@ -67,6 +67,27 @@
   accent-color: var(--accent);
 }
 
+/* 滑块 + 右侧数值：弹幕页（字号/行间距/描边宽度）、朗读页（语速/音量）、弹幕窗标签（宽/高）共用 */
+.size-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.size-control input[type="range"] {
+  width: 160px;
+  accent-color: var(--accent);
+}
+
+/* 数值标签宽度固定，拖动时文字宽度变化不会带得滑块左右动。
+   朗读页的数值带百分号更长，在那个组件的 scoped 样式里覆盖 min-width。 */
+.value {
+  min-width: 42px;
+  text-align: right;
+  color: var(--text-dim);
+  font-size: 15px;
+}
+
 .select {
   background: var(--bg-elev);
   border: 1px solid var(--border);
