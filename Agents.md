@@ -2,7 +2,7 @@
 
 ## 项目概览
 
-轻量级 B 站直播弹幕桌面助手（Windows）：连接 B 站直播间 → 获取实时弹幕 → 在桌面透明悬浮层（Overlay）显示，供 OBS 推流主播看弹幕使用。Tauri 2 多窗口架构：主窗口（配置）+ 透明悬浮窗。
+轻量级 B 站直播弹幕桌面助手（Windows）：连接 B 站直播间 → 获取实时弹幕 → 在桌面透明悬浮层（Overlay）显示，供 OBS 推流主播看弹幕使用。Tauri 2 多窗口架构：主窗口（配置）+ 透明悬浮窗（Overlay）+ 发送弹幕框（Sender，始终吸附 Overlay 下方）。
 
 ## 技术栈
 
@@ -24,13 +24,13 @@
 ## 代码约定
 
 - 目录结构：
-  - `src/` 前端：`views/` 页面（RoomView 房间、DanmakuView 弹幕、AboutView 关于）、`overlay/OverlayApp.vue` 悬浮层入口、`composables/` 逻辑（如 useLogin）、`types/ipc.ts` IPC 类型定义、`overlay.ts` 独立入口（对应 `overlay.html`）
-  - `src-tauri/src/bilibili/` Rust 端 B 站协议：`protocol.rs` 协议包、`parser.rs` 解压/解析、`client.rs` 连接、`wbi.rs` 签名、`login.rs` 扫码登录、`event.rs` 事件
+  - `src/` 前端：`views/` 页面（RoomView 房间、DanmakuView 弹幕、AboutView 关于）、`overlay/OverlayApp.vue` 悬浮层入口、`sender/SenderApp.vue` 发送弹幕框入口、`composables/` 逻辑（如 useLogin）、`types/ipc.ts` IPC 类型定义、`overlay.ts` / `sender.ts` 独立入口（对应 `overlay.html` / `sender.html`）
+  - `src-tauri/src/bilibili/` Rust 端 B 站协议：`protocol.rs` 协议包、`parser.rs` 解压/解析、`client.rs` 连接、`wbi.rs` 签名、`login.rs` 扫码登录、`send.rs` 发送弹幕、`event.rs` 事件
   - `src-tauri/src/config.rs` 配置持久化、`lib.rs` 注册命令与窗口管理
-- 多窗口：根目录 `index.html`（主窗口）+ `overlay.html`（透明悬浮窗），Tauri 配置见 `src-tauri/tauri.conf.json` 与 `capabilities/default.json`
+- 多窗口：根目录 `index.html`（主窗口）+ `overlay.html`（透明悬浮窗）+ `sender.html`（发送弹幕框），Tauri 配置见 `src-tauri/tauri.conf.json` 与 `capabilities/default.json`
 - IPC 双向类型约定：Rust command 与 `src/types/ipc.ts` 保持一致，改动协议时两端同步
 - 注释、commit、PRD（`prd.md`）一律简体中文
-- PRD 即功能需求来源：已完成/规划状态以 `README.md` 表格和 `prd.md` 为准（TTS 朗读、滚动弹幕、用户屏蔽为未做项；弹幕过滤已完成）
+- PRD 即功能需求来源：已完成/规划状态以 `README.md` 表格和 `prd.md` 为准（TTS 朗读、滚动弹幕、用户屏蔽为未做项；弹幕过滤、发送弹幕已完成）
 
 ## 注意事项
 
@@ -40,3 +40,4 @@
 - 登录 Cookie 在 `config.rs` 写盘边界统一 **DPAPI 加密**（`dpapi:` 前缀 + hex）落盘、读取自动解密（旧版明文无前缀兼容）：任何新增的敏感字段必须走同类加密，勿明文落盘；内存态保持明文
 - `config.rs` 读写持有全局互斥（save_* 均为 load-modify-save）：新增保存函数须沿用 `lock_cfg()` + `*_unlocked` 模式，勿在持锁时调用加锁公共入口（std Mutex 不可重入）
 - 断线自动重连在 `lib.rs` `spawn_connection`（1/2/4/…/30s 退避、10 次上限）；改连接收尾逻辑时保留取消令牌身份检查（`finish_connection`），否则旧任务会误清新连接状态
+- 发送弹幕需登录态（`bili_jct` 做 CSRF 签名，游客无 bili_jct 会报错）；发送框窗口始终吸附 Overlay 下方（`lib.rs` `sync_sender_docked`），缩进/宽度/高度随弹幕字号缩放——改动 Overlay 布局（`role-slot` 宽度、容器 padding）时须同步 `sender_layout_metrics` 的缩进系数，否则发送框与弹幕正文列错位

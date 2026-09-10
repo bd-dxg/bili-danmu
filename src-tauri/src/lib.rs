@@ -95,6 +95,37 @@ fn overlay_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
     app.get_webview_window("overlay")
 }
 
+/// 获取 Sender 窗口实例（不存在返回 None）
+fn sender_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
+    app.get_webview_window("sender")
+}
+
+/// 发送框始终吸附：对齐到弹幕窗正文列下方（左端缩进 role-slot，宽度跟随，高度随字号）
+fn sync_sender_docked(app: &AppHandle) {
+    let (Some(ov), Some(sender)) = (overlay_window(app), sender_window(app)) else {
+        return;
+    };
+    let Ok(pos) = ov.outer_position() else { return };
+    let Ok(size) = ov.outer_size() else { return };
+    let scale = ov.scale_factor().unwrap_or(1.0);
+    let (indent, right_pad, h) = sender_layout_metrics(app, scale);
+    let x = pos.x + indent as i32;
+    let y = pos.y + size.height as i32;
+    let w = size.width.saturating_sub(indent + right_pad).max(1);
+    let _ = sender.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(x, y)));
+    let _ = sender.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(w, h)));
+}
+
+/// 发送框相对弹幕窗的缩进/右距/高度（物理 px），随弹幕字号缩放。
+/// 缩进 = 容器 padding 6px + role-slot 4em + 0.35em 间距，与 OverlayApp.vue 正文列起点一致。
+fn sender_layout_metrics(app: &AppHandle, scale: f64) -> (u32, u32, u32) {
+    let font_size = app.state::<OverlayState>().style.lock().unwrap().font_size;
+    let indent = ((6.0 + 4.35 * font_size) * scale).round() as u32;
+    let right_pad = (6.0 * scale).round() as u32;
+    let h = ((font_size * 3.8 + 8.0) * scale).round() as u32;
+    (indent, right_pad, h)
+}
+
 /// 显示 / 隐藏 Overlay（返回新可见状态）
 #[tauri::command]
 fn overlay_set_visible(app: AppHandle, visible: bool) -> Result<bool, String> {
@@ -158,7 +189,10 @@ fn overlay_set_style(
 ) -> Result<(), String> {
     *state.style.lock().unwrap() = style.clone();
     let _ = app.emit("overlay-style", &style);
-    config::save_overlay_style(&app, &style)
+    config::save_overlay_style(&app, &style)?;
+    // 弹幕字号变化影响发送框缩进与高度，同步重对齐
+    sync_sender_docked(&app);
+    Ok(())
 }
 
 /// 读取当前弹幕过滤配置
@@ -274,6 +308,39 @@ async fn qr_poll(
 fn logout(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
     *state.auth.lock().unwrap() = None;
     config::clear_auth(&app)
+}
+
+/// 发送弹幕到当前连接的直播间（需登录态）
+#[tauri::command]
+async fn send_danmaku(state: State<'_, AppState>, msg: String) -> Result<(), String> {
+    let msg = msg.trim();
+    if msg.is_empty() {
+        return Err("弹幕内容不能为空".into());
+    }
+    if msg.chars().count() > 100 {
+        return Err("弹幕最长 100 字".into());
+    }
+
+    // 登录态（含 bili_jct）——锁作用域内克隆，避免持锁 await
+    let cookies = {
+        let auth = state.auth.lock().unwrap();
+        match auth.as_ref() {
+            Some(a) => a.cookies.clone(),
+            None => return Err("请先扫码登录后再发送弹幕".into()),
+        }
+    };
+
+    // 当前连接的真实房间号（未连接时无发送目标）
+    let room_id = {
+        let st = state.status.lock().unwrap();
+        match *st {
+            RoomStatus::Connected { room_id } => room_id,
+            _ => return Err("请先连接直播间后再发送弹幕".into()),
+        }
+    };
+
+    let client = bilibili::client::http_client();
+    bilibili::send::send_danmaku(&client, &cookies, room_id, msg).await
 }
 
 /// 连接直播间：短号或真实房间号均可
@@ -482,6 +549,8 @@ pub fn run() {
                         tauri::WindowEvent::Moved(_) | tauri::WindowEvent::Resized(_)
                     ) {
                         capture_overlay_bounds(&app2);
+                        // 发送框始终吸附：弹幕窗移动/缩放时跟随
+                        sync_sender_docked(&app2);
                     }
                 });
             } else {
@@ -497,6 +566,26 @@ pub fn run() {
                     flush_overlay_bounds(&app3);
                 }
             });
+
+            // Sender：发送框始终吸附在弹幕窗下方（无边框 / 置顶 / 跳过任务栏）
+            let sender_builder = WebviewWindowBuilder::new(
+                app,
+                "sender",
+                WebviewUrl::App("sender.html".into()),
+            )
+            .title("bili-danmu 发送")
+            .inner_size(320.0, 80.0)
+            .decorations(false)
+            .transparent(true)
+            .always_on_top(true)
+            .resizable(false)
+            .skip_taskbar(true)
+            .shadow(false);
+            if sender_builder.build().is_err() {
+                eprintln!("[sender] 创建失败");
+            }
+            // 创建后立即对齐到弹幕窗下方（覆盖默认位置/尺寸）
+            sync_sender_docked(app.handle());
 
             // 主窗口 × → 最小化到托盘（不退出；由托盘菜单唤出/退出）
             if let Some(main_win) = app.get_webview_window("main") {
@@ -578,6 +667,7 @@ pub fn run() {
             qr_generate,
             qr_poll,
             logout,
+            send_danmaku,
             overlay_set_visible,
             overlay_set_clickthrough,
             overlay_get_clickthrough,
