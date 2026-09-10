@@ -25,7 +25,7 @@ const loadingVoices = ref(false);
 // 页内标签：engine / content / filter
 const tab = ref<"engine" | "content" | "filter">("engine");
 
-// 配置里的音色不在列表中（旧版手填的残值 / 非中文音色）：补一项展示，避免下拉框空白
+// 配置里的音色不在列表中（刷新失败时的内置表、旧版手填的残值）：补一项展示，避免下拉框空白
 const customVoice = computed(() =>
   voices.value.length > 0 && !voices.value.some((v) => v.id === config.value.voice)
     ? config.value.voice
@@ -82,14 +82,20 @@ async function testSpeak() {
   }
 }
 
-async function refreshVoices() {
+// 拉取微软完整音色列表；返回是否成功（成功才代表列表权威，可用于校验音色有效性）
+async function refreshVoices(): Promise<boolean> {
   loadingVoices.value = true;
   try {
     const list = await invoke<TtsVoice[]>("tts_refresh_voices");
-    if (list.length) voices.value = list;
+    if (list.length) {
+      voices.value = list;
+      return true;
+    }
+    return false;
   } catch (e) {
     // 拉取失败保留内置中文音色，音色名仍可手填
     console.error("刷新音色列表失败", e);
+    return false;
   } finally {
     loadingVoices.value = false;
   }
@@ -101,21 +107,25 @@ onMounted(async () => {
   } catch (e) {
     console.error("读取朗读配置失败", e);
   }
-  // 先上内置列表秒开，再后台换成微软完整列表
+  // 先上内置列表秒开，再换成微软完整列表
   try {
     voices.value = await invoke<TtsVoice[]>("tts_list_voices");
   } catch (e) {
     console.error("读取音色列表失败", e);
   }
-  await fixInvalidVoice();
-  refreshVoices();
+  // 只有拿到微软完整列表才校验：内置的 14 个是兜底子集，拿它校验会把用户
+  // 从完整列表里选的音色误判为无效，静默回退并落盘覆盖（离线启动必踩）
+  if (await refreshVoices()) {
+    await fixInvalidVoice();
+  }
 });
 
-/** 配置里的音色不在列表中时静默回退默认音色：否则每一条弹幕合成都拿不到音频 */
+// 配置里的音色不在微软完整列表中时静默回退默认音色：否则每一条弹幕合成都拿不到音频
+// 只在 refreshVoices 成功后调用，见 onMounted 里的说明
 async function fixInvalidVoice() {
   if (!voices.value.length) return;
   if (voices.value.some((v) => v.id === config.value.voice)) return;
-  console.warn(`音色 ${config.value.voice} 不在列表中，已回退默认音色`);
+  console.warn(`音色 ${config.value.voice} 不在微软音色列表中，已回退默认音色`);
   config.value.voice = DEFAULT_TTS_CONFIG.voice;
   try {
     await invoke("tts_set_config", { tts: { ...config.value } });
@@ -168,7 +178,7 @@ async function fixInvalidVoice() {
               {{ v.label }}
             </option>
             <option v-if="customVoice" :value="customVoice">
-              {{ customVoice }}（无效音色，请重新选择）
+              {{ customVoice }}（不在列表中，可点「刷新」重试）
             </option>
           </select>
           <button
@@ -251,7 +261,7 @@ async function fixInvalidVoice() {
       </div>
 
       <div class="setting-row">
-        <span class="label">积压时打断当前朗读</span>
+        <span class="label">积压时丢弃待播旧弹幕（当前这条念完）</span>
         <input
           v-model="config.interrupt_on_backlog"
           type="checkbox"
@@ -286,9 +296,9 @@ async function fixInvalidVoice() {
 
       <p class="tip">
         关掉用户名与身份前缀 = 只念弹幕内容（默认）。最大字数只算弹幕正文，
-        身份前缀与用户名不占额度。高速直播间建议同时开「积压时打断」：
-        新弹幕会直接顶掉正在念的那条，延迟上限压到一条朗读时长（每条至少念 1.8 秒才可能被打断）。
-        队列上限调小则能保证念的都是最新弹幕。
+        身份前缀与用户名不占额度。高速直播间建议同时开「积压时丢弃旧弹幕」：
+        念的总是队列里最新的那条，正在念的那条不被打断（避免只听到半句用户名），
+        延迟上限 = 一条朗读时长。队列上限调小则能保证念的都是最新弹幕。
       </p>
     </div>
 

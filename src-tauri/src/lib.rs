@@ -390,6 +390,18 @@ async fn send_danmaku(state: State<'_, AppState>, msg: String) -> Result<(), Str
     bilibili::send::send_danmaku(&client, &cookies, room_id, msg).await
 }
 
+/// 后台记录最近连接的直播间：抓主播名 → 写配置 → 广播给主窗口刷新面包屑
+///
+/// 不放在连接流程里 await：主播名接口只影响面包屑显示，不该让弹幕会话等它。
+fn spawn_recent_room(app: AppHandle, client: reqwest::Client, room_id: u32) {
+    tauri::async_runtime::spawn(async move {
+        // 抓不到主播名（接口失败）也只存房间号，前端回退显示房间号
+        let uname = bilibili::client::fetch_anchor_uname(&client, room_id).await;
+        let _ = config::save_recent_room(&app, &config::RecentRoom { room_id, uname });
+        let _ = app.emit("recent-rooms-changed", ());
+    });
+}
+
 /// 查询最近连接的直播间（主界面面包屑，已按最近在前排序）
 #[tauri::command]
 fn get_recent_rooms(app: AppHandle) -> Vec<config::RecentRoom> {
@@ -460,15 +472,9 @@ fn spawn_connection(app: AppHandle, short_id: u32, cancel: CancellationToken) {
             );
         }
 
-        // 记录到最近房间（面包屑）：主播名请求失败不阻断连接，回退只存房间号
-        let uname = bilibili::client::fetch_anchor_uname(&client, resolved.room_id).await;
-        let _ = config::save_recent_room(
-            &app,
-            &config::RecentRoom {
-                room_id: resolved.room_id,
-                uname,
-            },
-        );
+        // 记录到最近房间（面包屑）：抓主播名是一次额外 HTTP，放在连接关键路径上会拖长
+        // 「连接中…」（接口异常时最多 10s），故拆成后台任务；写完广播事件让主窗口刷新面包屑
+        spawn_recent_room(app.clone(), client.clone(), resolved.room_id);
 
         // 2. 弹幕会话循环：断线自动重连，直到成功 / 用户断开 / 重试耗尽
         let mut attempt = 0u32;

@@ -23,8 +23,17 @@ use tokio::sync::{mpsc, Notify};
 const MAX_REPEAT: u32 = 3;
 /// 合成 → 播放通道容量：1 = 最多预合成 1 条
 const PIPELINE_DEPTH: usize = 1;
-/// 打断冷却：距上次打断不足这么久就不再打断，保证每条至少能念出头一句
-/// （否则高速房间会变成一直被打断、永远听不到完整句子）
+/// 单条弹幕合成的总超时（含建连、发送、收流）
+/// 12s：最长文本（`max_len = 0` 时 40 字）× 0.21s/字 + 握手 ~0.9s ≈ 9.3s，留余量即可；
+/// 设太大（如 20s）时服务端黑洞会把合成任务卡到全队列被丢光才熔断
+const SYNTH_TIMEOUT: Duration = Duration::from_secs(12);
+/// 连续失败达到该次数即熔断退避：清空积压 + 指数退避后再试
+const FAIL_THRESHOLD: u32 = 2;
+/// 熔断退避起始时长（每多失败一次翻倍，封顶 FAIL_BACKOFF_MAX）
+const FAIL_BACKOFF_MIN: Duration = Duration::from_secs(1);
+const FAIL_BACKOFF_MAX: Duration = Duration::from_secs(60);
+/// 打断冷却：距上次打断不足这么久就不再作废在途音频
+/// （否则高频房间合成刚起步就被反复作废，白忙一场）
 const INTERRUPT_COOLDOWN: Duration = Duration::from_millis(1800);
 
 /// 队列项：`force` 标记的试听不受总开关限制
@@ -37,6 +46,8 @@ struct QueueItem {
 struct AudioChunk {
     data: Vec<u8>,
     epoch: u64,
+    /// 试听：不受总开关限制，关着朗读也要能出声
+    force: bool,
 }
 
 /// 朗读队列与配置（Tauri 管理状态）
@@ -73,6 +84,11 @@ impl TtsState {
         self.config.lock().unwrap().clone()
     }
 
+    /// 总开关状态（播放端每个轮询查一次，决定要不要立刻停）
+    pub fn is_enabled(&self) -> bool {
+        self.config.lock().unwrap().enabled
+    }
+
     /// 当前音色列表（内置兜底 + 已拉取的完整列表）
     pub fn voices(&self) -> Vec<(String, String)> {
         self.voices.lock().unwrap().clone()
@@ -82,14 +98,14 @@ impl TtsState {
         *self.voices.lock().unwrap() = voices;
     }
 
-    /// 更新配置：关闭时立即丢弃积压并掐断当前朗读
+    /// 更新配置：关闭时丢弃积压（在播的那条由播放端查开关后自行停下）
     pub fn set_config(&self, config: TtsConfig) {
         let disabled = !config.enabled;
         *self.config.lock().unwrap() = config;
         if disabled {
             self.queue.lock().unwrap().clear();
+            // 递增代次作废在途音频（含正在合成的那条）；在播的那条由 play_mp3 的 stop_now 验开关停下
             self.epoch.fetch_add(1, Ordering::Relaxed);
-            player::stop();
         }
     }
 
@@ -115,7 +131,10 @@ impl TtsState {
         }
     }
 
-    /// 积压时打断：已在出声且队列里还有更新的弹幕，就掐掉当前这条
+    /// 积压时打断：已在出声且队列里还有更新的弹幕，就作废在途音频
+    /// （正在合成的 + 已合成未播的），让更新的弹幕尽快接上。
+    /// **不**掐正在念的那条：音频整条合成，掐断只会听到半句（开了念用户名时连正文都没开始），
+    /// 故延迟上限是一条朗读时长。
     fn interrupt_if_backlogged(&self, enabled: bool) {
         if !enabled || !self.playing.load(Ordering::Relaxed) {
             return;
@@ -130,9 +149,8 @@ impl TtsState {
             }
             *last = Some(Instant::now());
         }
-        // 递增代次：正在合成与已合成未播的那条都会因代次不符被丢弃
+        // 递增代次：正在合成、已合成未播的那条会因代次不符被丢弃（在播的那条念完）
         self.epoch.fetch_add(1, Ordering::Relaxed);
-        player::stop();
     }
 }
 
@@ -140,20 +158,31 @@ impl TtsState {
 pub fn spawn_worker(app: AppHandle) {
     let (play_tx, mut play_rx) = mpsc::channel::<AudioChunk>(PIPELINE_DEPTH);
 
-    // 播放任务：严格串行；代次过期的音频（已被更新弹幕顶掉）直接丢弃
+    // 播放任务：严格串行；代次过期的音频（已被更新弹幕顶掉 / 关了朗读）直接丢弃
     let player_app = app.clone();
     tauri::async_runtime::spawn(async move {
         while let Some(chunk) = play_rx.recv().await {
-            let current = player_app.state::<TtsState>().epoch.load(Ordering::Relaxed);
-            if chunk.epoch != current {
-                continue;
+            let epoch = chunk.epoch;
+            let force = chunk.force;
+            {
+                let state = player_app.state::<TtsState>();
+                if epoch != state.epoch.load(Ordering::Relaxed) {
+                    continue;
+                }
+                state.playing.store(true, Ordering::Relaxed);
             }
-            player_app
-                .state::<TtsState>()
-                .playing
-                .store(true, Ordering::Relaxed);
             // MCI 播放要阻塞到播完，放阻塞线程池里跑，别占住异步 worker
-            let _ = tokio::task::spawn_blocking(move || player::play_mp3(&chunk.data)).await;
+            let play_app = player_app.clone();
+            let data = chunk.data;
+            let _ = tokio::task::spawn_blocking(move || {
+                let expired =
+                    || epoch != play_app.state::<TtsState>().epoch.load(Ordering::Relaxed);
+                // 只有「关掉朗读」才立刻停下；被打断的只是还没开播的音频
+                // （见 interrupt_if_backlogged），且试听不受总开关限制
+                let stop_now = || !force && !play_app.state::<TtsState>().is_enabled();
+                player::play_mp3(&data, expired, stop_now)
+            })
+            .await;
             player_app
                 .state::<TtsState>()
                 .playing
@@ -163,6 +192,10 @@ pub fn spawn_worker(app: AppHandle) {
 
     // 合成任务：send 完立刻开始合成下一条，与播放重叠
     tauri::async_runtime::spawn(async move {
+        // 连续失败计数：服务端拒绝（10054 / 黑洞超时）时指数退避。
+        // 失败是秒回（~0.1s）、成功是两条 ~2s，若失败后立即重试下一条，
+        // 请求速率会瞬时飙升到十倍以上、把服务端限流撞得更紧，且能自我维持——必须退避。
+        let mut consecutive_fail = 0u32;
         loop {
             let item = app.state::<TtsState>().pop().await;
             let config = app.state::<TtsState>().config();
@@ -171,22 +204,52 @@ pub fn spawn_worker(app: AppHandle) {
                 continue;
             }
             let epoch = app.state::<TtsState>().epoch.load(Ordering::Relaxed);
-            match edge::synthesize(&config.voice, config.rate_pct, config.volume_pct, &item.text)
-                .await
-            {
-                Ok(mp3) => {
+            // 总超时兜住建连阶段：edge::synthesize 内部只覆盖收流，网络黑洞时建连会拖到
+            // 系统 TCP 超时（Windows ~21s），单合成任务被独占，期间队列持续丢弹幕
+            let synth = tokio::time::timeout(
+                SYNTH_TIMEOUT,
+                edge::synthesize(&config.voice, config.rate_pct, config.volume_pct, &item.text),
+            )
+            .await;
+            match synth {
+                Ok(Ok(mp3)) => {
                     let state = app.state::<TtsState>();
                     // 合成期间可能已被关掉或被打断，丢弃过期产物，别出声音
                     let keep = (item.force || state.config().enabled)
                         && state.epoch.load(Ordering::Relaxed) == epoch;
                     drop(state);
-                    if keep && play_tx.send(AudioChunk { data: mp3, epoch }).await.is_err() {
+                    if keep
+                        && play_tx
+                            .send(AudioChunk {
+                                data: mp3,
+                                epoch,
+                                force: item.force,
+                            })
+                            .await
+                            .is_err()
+                    {
                         break; // 播放端已退出
                     }
+                    consecutive_fail = 0;
+                    continue;
                 }
-                // 单条失败只记录不重试：限流/断网时重试会让日志和请求雪崩
-                Err(e) => eprintln!("[tts] 合成失败：{e}"),
+                // 单条失败只记录不重试：重试会让日志和请求雪崩（熔断见下）
+                Ok(Err(e)) => eprintln!("[tts] 合成失败：{e}"),
+                Err(_) => eprintln!("[tts] 合成超时（{SYNTH_TIMEOUT:?}）"),
             }
+
+            // 熔断：积压的弹幕已经过期（听众关心的是新弹幕），先清掉；
+            // 退避期间不发起任何请求，给服务端冷却时间，避开越撞越紧的恶性循环
+            consecutive_fail += 1;
+            if consecutive_fail < FAIL_THRESHOLD {
+                continue;
+            }
+            // 指数封顶到 2^6（64s）再 min，否则持续失败几十分钟后 `2u32.pow` 会溢出 panic
+            let shift = (consecutive_fail - FAIL_THRESHOLD).min(6);
+            let backoff = (FAIL_BACKOFF_MIN * 2u32.pow(shift)).min(FAIL_BACKOFF_MAX);
+            eprintln!("[tts] 连续失败 {consecutive_fail} 次，丢弃积压共暂停 {backoff:?} 后重试");
+            app.state::<TtsState>().queue.lock().unwrap().clear();
+            tokio::time::sleep(backoff).await;
         }
     });
 }

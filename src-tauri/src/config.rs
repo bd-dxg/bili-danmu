@@ -134,7 +134,7 @@ pub struct TtsConfig {
     pub max_len: u32,
     /// 待朗读队列上限（超出丢弃最旧的）
     pub max_queue: u32,
-    /// 积压时打断当前朗读（新弹幕直接顶掉正在念的那条，延迟上限压到一条朗读时长）
+    /// 积压时丢弃待播的旧弹幕（作废还没开播的在途音频，正在念的那条念完）
     pub interrupt_on_backlog: bool,
     /// 朗读筛选条件（与弹幕显示筛选相互独立）
     pub filter: DanmakuFilter,

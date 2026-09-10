@@ -113,7 +113,7 @@ export interface TtsConfig {
   max_len: number;
   /** 待朗读队列上限（超出丢弃最旧的） */
   max_queue: number;
-  /** 积压时打断当前朗读 */
+  /** 积压时丢弃待播旧弹幕（当前这条念完） */
   interrupt_on_backlog: boolean;
   /** 朗读筛选条件（与弹幕显示筛选相互独立） */
   filter: DanmakuFilter;
