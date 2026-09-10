@@ -121,7 +121,7 @@ fn handle_frame(app: &tauri::AppHandle, room_id: u32, data: &[u8]) -> Result<(),
                     return Err(format!("B 站认证失败 code={code}"));
                 }
                 // 同步内部状态机（供 get_connection_status / 轮询查询真实状态）
-                crate::on_room_connected(app, room_id);
+                crate::state::on_room_connected(app, room_id);
                 // 认证成功：同步状态给前端
                 let _ = app.emit(
                     "room-status",
@@ -135,7 +135,7 @@ fn handle_frame(app: &tauri::AppHandle, room_id: u32, data: &[u8]) -> Result<(),
                         // 单变体：所有事件都是弹幕
                         let BilibiliEvent::Danmaku(d) = ev;
                         // 朗读是与显示并列的独立消费者（关闭朗读不影响弹幕窗）
-                        crate::record_danmaku(app);
+                        crate::state::record_danmaku(app);
                         crate::tts::on_danmaku(app, &d);
                         let _ = app.emit("danmaku", d);
                     }
