@@ -2,7 +2,7 @@
 import { onMounted, onUnmounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { RoomStatusEvent } from "../types/ipc";
+import type { RecentRoom, RoomStatusEvent } from "../types/ipc";
 import { refreshLogin, useLogin } from "../composables/useLogin";
 
 const { loggedIn, uid, uname, openLoginDialog, logout } = useLogin();
@@ -10,6 +10,8 @@ const roomId = ref("");
 const busy = ref(false); // 连接/断开操作中
 const status = ref<RoomStatusEvent>({ state: "disconnected" });
 const errorMsg = ref("");
+// 最近连接过的直播间（Rust 持久化，输入框下方面包屑）
+const recentRooms = ref<RecentRoom[]>([]);
 
 let unlistenStatus: UnlistenFn | undefined;
 
@@ -20,7 +22,11 @@ const statusText: Record<string, string> = {
   error: "连接失败",
 };
 
-async function connect() {
+// target 为面包屑直连的房间号：回填输入框，保证输入框与连接目标一致
+async function connect(target?: number) {
+  if (target !== undefined) {
+    roomId.value = String(target);
+  }
   const id = Number(roomId.value);
   if (!Number.isInteger(id) || id <= 0) {
     errorMsg.value = "请输入有效的直播间 ID";
@@ -48,6 +54,15 @@ async function disconnect() {
   }
 }
 
+// 读取最近房间（连接成功后 Rust 侧已写入，含主播名）
+async function loadRecentRooms() {
+  try {
+    recentRooms.value = await invoke<RecentRoom[]>("get_recent_rooms");
+  } catch {
+    // 读取失败不影响连接功能，保持空列表
+  }
+}
+
 // 退出登录：先断开直播连接，再清登录态（登录是收弹幕的前提）
 async function handleLogout() {
   if (status.value.state === "connected" || status.value.state === "connecting") {
@@ -58,10 +73,13 @@ async function handleLogout() {
 
 onMounted(async () => {
   await refreshLogin();
+  await loadRecentRooms();
   unlistenStatus = await listen<RoomStatusEvent>("room-status", (e) => {
     status.value = e.payload;
     if (e.payload.state === "connected") {
       errorMsg.value = "";
+      // 连接成功时 Rust 侧刚好写入最近房间（含主播名），刷新面包屑
+      void loadRecentRooms();
     }
   });
 });
@@ -101,8 +119,22 @@ onUnmounted(() => {
       >
         断开
       </button>
-      <button v-else class="btn primary" :disabled="busy" @click="connect">
+      <button v-else class="btn primary" :disabled="busy" @click="connect()">
         连接
+      </button>
+    </div>
+
+    <div v-if="recentRooms.length" class="recent-bar">
+      <span class="recent-label">最近</span>
+      <button
+        v-for="r in recentRooms"
+        :key="r.room_id"
+        class="crumb"
+        :title="`房间 ${r.room_id}`"
+        :disabled="busy || status.state === 'connecting' || status.state === 'connected'"
+        @click="connect(r.room_id)"
+      >
+        {{ r.uname || r.room_id }}
       </button>
     </div>
 
@@ -235,6 +267,48 @@ h2 {
   color: var(--red);
   font-size: 15px;
   margin-top: 8px;
+}
+
+/* 最近房间面包屑：点击直连；连接中/已连接时禁用（需先断开） */
+.recent-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  margin-top: 10px;
+}
+
+.recent-label {
+  color: var(--text-faint);
+  font-size: 14px;
+}
+
+.crumb {
+  background: none;
+  border: none;
+  padding: 2px 0;
+  color: var(--accent);
+  font-size: 14px;
+  cursor: pointer;
+  max-width: 12em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crumb + .crumb::before {
+  content: "›";
+  color: var(--text-faint);
+  margin-right: 8px;
+}
+
+.crumb:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.crumb:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
 }
 
 .status-box {

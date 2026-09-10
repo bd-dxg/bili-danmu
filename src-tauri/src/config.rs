@@ -112,6 +112,19 @@ impl Default for DanmakuFilter {
     }
 }
 
+/// 最近连接过的直播间（主界面输入框下方面包屑，点击直连）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecentRoom {
+    /// 真实房间号（短号已由解析接口还原）
+    pub room_id: u32,
+    /// 主播昵称（接口获取失败为 None，前端回退显示房间号）
+    #[serde(default)]
+    pub uname: Option<String>,
+}
+
+/// 最近房间保留条数上限
+pub const RECENT_ROOM_LIMIT: usize = 10;
+
 /// 配置文件结构（后续里程碑扩展字段）
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
@@ -120,6 +133,7 @@ pub struct ConfigFile {
     pub overlay_style: OverlayStyle,
     pub overlay_bounds: Option<WindowBounds>,
     pub danmaku_filter: DanmakuFilter,
+    pub recent_rooms: Vec<RecentRoom>,
 }
 
 /// 配置读写互斥锁：save_* 均为「读整份 → 改字段 → 写整份」，并发交错会互相覆盖
@@ -236,6 +250,16 @@ pub fn save_danmaku_filter(app: &AppHandle, filter: &DanmakuFilter) -> Result<()
     let _g = lock_cfg();
     let mut cfg = load_config_unlocked(app);
     cfg.danmaku_filter = filter.clone();
+    save_config_unlocked(app, &cfg)
+}
+
+/// 记录最近连接的直播间：同房间去重后置顶（顺带更新主播名），超出上限截断
+pub fn save_recent_room(app: &AppHandle, room: &RecentRoom) -> Result<(), String> {
+    let _g = lock_cfg();
+    let mut cfg = load_config_unlocked(app);
+    cfg.recent_rooms.retain(|r| r.room_id != room.room_id);
+    cfg.recent_rooms.insert(0, room.clone());
+    cfg.recent_rooms.truncate(RECENT_ROOM_LIMIT);
     save_config_unlocked(app, &cfg)
 }
 
