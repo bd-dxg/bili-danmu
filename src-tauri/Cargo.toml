@@ -19,6 +19,7 @@ serde_json = "1"
 tokio = { version = "1", features = ["time", "sync", "macros"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
+native-tls = "0.2"
 reqwest = { version = "0.12", features = ["json", "gzip"] }
 md-5 = "0.10"
 sha2 = "0.10"

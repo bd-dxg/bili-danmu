@@ -165,10 +165,44 @@ fn edge_headers() -> Vec<(&'static str, String)> {
 /// Edge TTS WebSocket 连接（原生 TLS）
 type Ws = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
+/// Edge TTS 服务端点：自己解析 DNS 才能按地址族择优，并记录实际使用的对端地址
+const TTS_HOST: &str = "speech.platform.bing.com";
+const TTS_PORT: u16 = 443;
+
+/// 建立到 Edge TTS 的 TCP 连接：**IPv4 优先**，全部失败才回退 IPv6
+///
+/// 不用 `tokio_tungstenite::connect_async`：它按 DNS 返回顺序尝试（Windows 上 IPv6 通常排前），
+/// 连上就用，不会因链路劣化换地址族。国内直连微软的 IPv6 路径偶发被 RST——现象是弹幕一路
+/// 正常、朗读却整段全挂（收流阶段 10054），故让 IPv4 先试。
+async fn dial_tcp() -> Result<(tokio::net::TcpStream, std::net::SocketAddr), String> {
+    let addrs = tokio::net::lookup_host((TTS_HOST, TTS_PORT))
+        .await
+        .map_err(|e| format!("Edge TTS 域名解析失败: {e}"))?
+        .collect::<Vec<_>>();
+    if addrs.is_empty() {
+        return Err("Edge TTS 域名无解析结果".into());
+    }
+    let (v4, v6): (Vec<_>, Vec<_>) = addrs.into_iter().partition(|a| a.is_ipv4());
+    let mut last_err = String::from("无可用地址");
+    for addr in v4.into_iter().chain(v6) {
+        match tokio::net::TcpStream::connect(addr).await {
+            Ok(stream) => {
+                if !addr.is_ipv4() {
+                    eprintln!("[tts] IPv4 不可达，连接回退到 {addr}（IPv6）");
+                }
+                return Ok((stream, addr));
+            }
+            Err(e) => last_err = format!("{addr}: {e}"),
+        }
+    }
+    Err(format!("Edge TTS 所有地址均不可达（最后失败 {last_err}）"))
+}
+
 /// 建立一条 Edge TTS WebSocket（DRM 令牌 + 服务端校验必需的请求头）
 ///
 /// 每条合成单独建连：服务端**不接受**同一条连接发多轮（实测第二轮直接 RST 10054），故不复用。
-async fn connect() -> Result<Ws, String> {
+/// 返回 WebSocket 与对端地址（便于失败时定位是哪条网络路径）。
+async fn connect() -> Result<(Ws, std::net::SocketAddr), String> {
     let url = format!(
         "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1\
          ?TrustedClientToken={TRUSTED_CLIENT_TOKEN}\
@@ -189,10 +223,17 @@ async fn connect() -> Result<Ws, String> {
             }
         }
     }
-    let (ws, _) = tokio_tungstenite::connect_async(req)
-        .await
-        .map_err(|e| format!("Edge TTS 连接失败（网络不可达或被限流）: {e}"))?;
-    Ok(ws)
+    let (tcp, peer) = dial_tcp().await?;
+    let connector = native_tls::TlsConnector::new().map_err(|e| format!("初始化 TLS 失败: {e}"))?;
+    let (ws, _) = tokio_tungstenite::client_async_tls_with_config(
+        req,
+        tcp,
+        None,
+        Some(tokio_tungstenite::Connector::NativeTls(connector)),
+    )
+    .await
+    .map_err(|e| format!("Edge TTS 连接失败（网络不可达或被限流）: {e}"))?;
+    Ok((ws, peer))
 }
 
 /// speech.config 帧：声明输出格式（每轮合成前都要先发）
@@ -292,8 +333,11 @@ pub async fn synthesize(
     volume_pct: i32,
     text: &str,
 ) -> Result<Vec<u8>, String> {
-    let mut ws = connect().await?;
-    synth_turn(&mut ws, voice, rate_pct, volume_pct, text).await
+    let (mut ws, peer) = connect().await?;
+    synth_turn(&mut ws, voice, rate_pct, volume_pct, text)
+        .await
+        // 带上对端地址：IPv4/IPv6 哪条链路出问题一眼可见
+        .map_err(|e| format!("{e}（对端 {peer}）"))
 }
 
 /// 拼 SSML；正文需 XML 转义，控制字符替换为空格（否则服务端报错）
