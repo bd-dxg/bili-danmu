@@ -93,6 +93,30 @@ pub async fn resolve_room(client: &reqwest::Client, short_id: u32) -> Result<Res
     })
 }
 
+/// 获取房间主播昵称（匿名可请求；失败返回 None，调用方回退显示房间号）
+pub async fn fetch_anchor_uname(client: &reqwest::Client, room_id: u32) -> Option<String> {
+    let url = format!(
+        "https://api.live.bilibili.com/live_user/v1/UserInfo/get_anchor_in_room?roomid={room_id}"
+    );
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .ok()?
+        .json::<serde_json::Value>()
+        .await
+        .ok()?;
+    if resp.get("code").and_then(|c| c.as_i64()).unwrap_or(-1) != 0 {
+        return None;
+    }
+    let uname = resp.pointer("/data/info/uname")?.as_str()?.trim().to_string();
+    if uname.is_empty() {
+        None
+    } else {
+        Some(uname)
+    }
+}
+
 /// 获取弹幕服务器配置（token + host 列表）
 ///
 /// 返回 (DanmuConf, guest_mode)：guest_mode=true 表示 token 为游客级，

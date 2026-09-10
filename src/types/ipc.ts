@@ -55,6 +55,14 @@ export interface OverlayStyle {
 /** connect_room 返回值 */
 export type ConnectResult = { ok: true } | { ok: false; message: string };
 
+/** 最近连接过的直播间（Rust 持久化，主界面输入框下方面包屑） */
+export interface RecentRoom {
+  /** 真实房间号（短号已解析） */
+  room_id: number;
+  /** 主播昵称（接口获取失败为 null，前端回退显示房间号） */
+  uname?: string | null;
+}
+
 /** 弹幕过滤配置（Rust ↔ Vue，事件名 danmaku-filter） */
 export interface DanmakuFilter {
   /** 只显示舰长（全部大航海）/ 房管弹幕 */

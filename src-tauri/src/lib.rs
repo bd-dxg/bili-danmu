@@ -343,6 +343,12 @@ async fn send_danmaku(state: State<'_, AppState>, msg: String) -> Result<(), Str
     bilibili::send::send_danmaku(&client, &cookies, room_id, msg).await
 }
 
+/// 查询最近连接的直播间（主界面面包屑，已按最近在前排序）
+#[tauri::command]
+fn get_recent_rooms(app: AppHandle) -> Vec<config::RecentRoom> {
+    config::load_config(&app).recent_rooms
+}
+
 /// 连接直播间：短号或真实房间号均可
 #[tauri::command]
 async fn connect_room(
@@ -406,6 +412,16 @@ fn spawn_connection(app: AppHandle, short_id: u32, cancel: CancellationToken) {
                 short_id, resolved.room_id
             );
         }
+
+        // 记录到最近房间（面包屑）：主播名请求失败不阻断连接，回退只存房间号
+        let uname = bilibili::client::fetch_anchor_uname(&client, resolved.room_id).await;
+        let _ = config::save_recent_room(
+            &app,
+            &config::RecentRoom {
+                room_id: resolved.room_id,
+                uname,
+            },
+        );
 
         // 2. 弹幕会话循环：断线自动重连，直到成功 / 用户断开 / 重试耗尽
         let mut attempt = 0u32;
@@ -677,6 +693,7 @@ pub fn run() {
             overlay_set_style,
             danmaku_get_filter,
             danmaku_set_filter,
+            get_recent_rooms,
             overlay_get_size,
             overlay_set_size,
             get_connection_status,
