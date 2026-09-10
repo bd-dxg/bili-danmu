@@ -112,6 +112,52 @@ impl Default for DanmakuFilter {
     }
 }
 
+/// TTS 弹幕朗读配置（M5）
+///
+/// 朗读筛选用独立的 `DanmakuFilter` 实例：显示全开、只朗读舰长这类组合才成立。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TtsConfig {
+    /// 总开关
+    pub enabled: bool,
+    /// Edge TTS 音色名（如 zh-CN-XiaoxiaoNeural）
+    pub voice: String,
+    /// 语速百分比偏移（-50 = 半速，+50 = 1.5 倍速）
+    pub rate_pct: i32,
+    /// 音量百分比偏移
+    pub volume_pct: i32,
+    /// 是否在正文前念用户名
+    pub read_username: bool,
+    /// 是否在正文前念身份前缀（房管 / 舰长）
+    pub read_role: bool,
+    /// 弹幕正文最大朗读字数（不含身份前缀与用户名；超出截断，0 = 不限制）
+    pub max_len: u32,
+    /// 待朗读队列上限（超出丢弃最旧的）
+    pub max_queue: u32,
+    /// 积压时打断当前朗读（新弹幕直接顶掉正在念的那条，延迟上限压到一条朗读时长）
+    pub interrupt_on_backlog: bool,
+    /// 朗读筛选条件（与弹幕显示筛选相互独立）
+    pub filter: DanmakuFilter,
+}
+
+impl Default for TtsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            voice: "zh-CN-XiaoxiaoNeural".into(),
+            rate_pct: 0,
+            volume_pct: 0,
+            read_username: false,
+            read_role: false,
+            // 15 字 ≈ 3.4s 音频；B 站弹幕上限 30–40 字（≈ 7–9s），全念完在高频房间会明显积压
+            max_len: 15,
+            max_queue: 5,
+            interrupt_on_backlog: true,
+            filter: DanmakuFilter::default(),
+        }
+    }
+}
+
 /// 最近连接过的直播间（主界面输入框下方面包屑，点击直连）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecentRoom {
@@ -133,6 +179,7 @@ pub struct ConfigFile {
     pub overlay_style: OverlayStyle,
     pub overlay_bounds: Option<WindowBounds>,
     pub danmaku_filter: DanmakuFilter,
+    pub tts: TtsConfig,
     pub recent_rooms: Vec<RecentRoom>,
 }
 
@@ -250,6 +297,14 @@ pub fn save_danmaku_filter(app: &AppHandle, filter: &DanmakuFilter) -> Result<()
     let _g = lock_cfg();
     let mut cfg = load_config_unlocked(app);
     cfg.danmaku_filter = filter.clone();
+    save_config_unlocked(app, &cfg)
+}
+
+/// 保存 TTS 朗读配置
+pub fn save_tts_config(app: &AppHandle, tts: &TtsConfig) -> Result<(), String> {
+    let _g = lock_cfg();
+    let mut cfg = load_config_unlocked(app);
+    cfg.tts = tts.clone();
     save_config_unlocked(app, &cfg)
 }
 

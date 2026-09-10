@@ -3,6 +3,7 @@ import { onMounted, ref } from "vue";
 import RoomView from "./views/RoomView.vue";
 import DanmakuView from "./views/DanmakuView.vue";
 import AboutView from "./views/AboutView.vue";
+import TtsView from "./views/TtsView.vue";
 import LoginDialog from "./components/LoginDialog.vue";
 import { refreshLogin } from "./composables/useLogin";
 
@@ -40,11 +41,8 @@ const current = ref<NavKey>("room");
       <!-- v-show 常驻渲染：切换页面不销毁组件，连接状态/弹幕列表保留 -->
       <RoomView v-show="current === 'room'" />
       <DanmakuView v-show="current === 'danmaku'" />
+      <TtsView v-show="current === 'tts'" />
       <AboutView v-show="current === 'about'" />
-      <section v-show="current === 'tts'" class="placeholder">
-        <h2>{{ navs.find((n) => n.key === current)?.label }}</h2>
-        <p>该设置页在后续 Milestone 中实现。</p>
-      </section>
     </main>
   </div>
   <LoginDialog />
@@ -103,15 +101,5 @@ nav {
   flex: 1;
   overflow-y: auto;
   padding: 20px;
-}
-
-.placeholder h2 {
-  font-size: 18px;
-  margin-bottom: 8px;
-}
-
-.placeholder p {
-  color: var(--text-faint);
-  font-size: 15px;
 }
 </style>
