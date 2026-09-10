@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { RecentRoom, RoomStatusEvent } from "../types/ipc";
@@ -14,6 +14,11 @@ const errorMsg = ref("");
 const recentRooms = ref<RecentRoom[]>([]);
 
 let unlistenStatus: UnlistenFn | undefined;
+
+// 连接中/已连接时锁定房间号输入框与最近面包屑：改号需先断开，避免输入框与实际连接目标不一致
+const locked = computed(
+  () => status.value.state === "connecting" || status.value.state === "connected",
+);
 
 const statusText: Record<string, string> = {
   disconnected: "未连接",
@@ -110,6 +115,7 @@ onUnmounted(() => {
         class="room-input"
         type="number"
         placeholder="输入直播间 ID，如 22312451"
+        :disabled="locked"
       />
       <button
         v-if="status.state === 'connected'"
@@ -119,7 +125,12 @@ onUnmounted(() => {
       >
         断开
       </button>
-      <button v-else class="btn primary" :disabled="busy" @click="connect()">
+      <button
+        v-else
+        class="btn primary"
+        :disabled="busy || status.state === 'connecting'"
+        @click="connect()"
+      >
         连接
       </button>
     </div>
@@ -131,7 +142,7 @@ onUnmounted(() => {
         :key="r.room_id"
         class="crumb"
         :title="`房间 ${r.room_id}`"
-        :disabled="busy || status.state === 'connecting' || status.state === 'connected'"
+        :disabled="busy || locked"
         @click="connect(r.room_id)"
       >
         {{ r.uname || r.room_id }}
@@ -225,6 +236,13 @@ h2 {
 
 .room-input:focus {
   border-color: var(--accent);
+}
+
+/* 锁定态与按钮禁用观感统一 */
+.room-input:disabled {
+  color: var(--text-faint);
+  cursor: not-allowed;
+  opacity: 0.7;
 }
 
 /* 隐藏 number 输入框自带的上下步进箭头 */
