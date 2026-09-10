@@ -1,0 +1,84 @@
+/* 主窗口设置页公共样式：DanmakuView / TtsView 共用
+ *
+ * 只放两个页面逐字一致的规则（页内标签栏 + 设置卡片 + 通用表单控件）。
+ * 页面独有的控件（颜色选择器、试听按钮、数字输入等）留在各自组件的 <style> 里，
+ * 避免在这里堆条件分支；两页都存在的差异项（如 .select 的 min-width）也留在各页覆盖。
+ */
+
+/* 页内标签栏 */
+.tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 14px;
+}
+
+.tab-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 17px;
+  font-weight: bold;
+  padding: 8px 16px 10px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+
+.tab-btn:hover {
+  color: var(--text);
+}
+
+.tab-btn.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+.setting-card {
+  background: var(--bg-side);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px 14px;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 16px;
+}
+
+.setting-row:last-of-type {
+  border-bottom: none;
+}
+
+.switch {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--accent);
+}
+
+.select {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 6px 10px;
+  font-size: 15px;
+  outline: none;
+}
+
+.select:focus {
+  border-color: var(--accent);
+}
+
+.tip {
+  font-size: 14px;
+  color: var(--text-faint);
+  padding: 4px 0 10px;
+  line-height: 1.6;
+}

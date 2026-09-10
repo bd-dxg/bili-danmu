@@ -397,6 +397,8 @@ onMounted(async () => {
   </div>
 </template>
 
+<style scoped src="../styles/settings.css"></style>
+
 <style scoped>
 .danmaku-page {
   display: flex;
@@ -407,55 +409,9 @@ onMounted(async () => {
   margin-bottom: 10px;
 }
 
-/* 页内标签栏 */
-.tabs {
-  display: flex;
-  gap: 2px;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 14px;
-}
-
-.tab-btn {
-  background: none;
-  border: none;
-  color: var(--text-dim);
-  font-size: 17px;
-  font-weight: bold;
-  padding: 8px 16px 10px;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  cursor: pointer;
-}
-
-.tab-btn:hover {
-  color: var(--text);
-}
-
-.tab-btn.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-  font-weight: 600;
-}
-
-.setting-card {
-  background: var(--bg-side);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 4px 14px;
-}
-
-.setting-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--border);
-  font-size: 16px;
-}
-
-.setting-row:last-of-type {
-  border-bottom: none;
+/* 设置页公共部分（标签栏 / 卡片 / 开关 / 下拉 / 提示）见 styles/settings.css */
+.select {
+  min-width: 150px;
 }
 
 .size-control {
@@ -476,27 +432,6 @@ onMounted(async () => {
   font-size: 15px;
 }
 
-.select {
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text);
-  padding: 6px 10px;
-  font-size: 15px;
-  outline: none;
-  min-width: 150px;
-}
-
-.select:focus {
-  border-color: var(--accent);
-}
-
-.switch {
-  width: 17px;
-  height: 17px;
-  accent-color: var(--accent);
-}
-
 .color-picker {
   width: 44px;
   height: 26px;
@@ -514,13 +449,6 @@ onMounted(async () => {
 .color-picker::-webkit-color-swatch {
   border: none;
   border-radius: 3px;
-}
-
-.tip {
-  font-size: 14px;
-  color: var(--text-faint);
-  padding: 4px 0 10px;
-  line-height: 1.6;
 }
 
 .error {
