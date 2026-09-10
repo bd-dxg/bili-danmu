@@ -4,6 +4,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { RecentRoom, RoomStatusEvent } from "../types/ipc";
 import { refreshLogin, useLogin } from "../composables/useLogin";
+import StatusDashboard from "../components/StatusDashboard.vue";
 
 const { loggedIn, uid, uname, openLoginDialog, logout } = useLogin();
 const roomId = ref("");
@@ -173,6 +174,8 @@ onUnmounted(() => {
         {{ status.message }}
       </span>
     </div>
+
+    <StatusDashboard />
   </div>
 </template>
 

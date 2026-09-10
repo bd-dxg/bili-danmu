@@ -8,7 +8,9 @@ mod bilibili;
 mod config;
 mod tts;
 
+use std::collections::VecDeque;
 use std::sync::Mutex;
+use std::time::Instant;
 
 use serde_json::json;
 use tauri::menu::{Menu, MenuItem};
@@ -36,11 +38,43 @@ struct AppState {
     cancel: Mutex<Option<CancellationToken>>,
     /// B 站登录态（None = 游客）
     auth: Mutex<Option<config::AuthInfo>>,
+    /// 最近接收弹幕的时刻（滑动窗口，供仪表盘算「条/10 秒」）
+    danmaku_ticks: Mutex<VecDeque<Instant>>,
+}
+
+/// 弹幕速率统计窗口（秒）：仪表盘展示「最近 RATE_WINDOW_SECS 秒接收条数」
+const RATE_WINDOW_SECS: u64 = 10;
+
+/// 记录一条已接收弹幕（速率统计，在弹幕事件回调里调用，非阻塞）
+pub(crate) fn record_danmaku(app: &AppHandle) {
+    let now = Instant::now();
+    let st = app.state::<AppState>();
+    let mut ticks = st.danmaku_ticks.lock().unwrap();
+    ticks.push_back(now);
+    prune_ticks(&mut ticks, now);
+}
+
+/// 丢弃滑动窗口外的时间戳（时间戳单调递增，只看队首即可）
+fn prune_ticks(ticks: &mut VecDeque<Instant>, now: Instant) {
+    while let Some(front) = ticks.front() {
+        if now.duration_since(*front).as_secs() >= RATE_WINDOW_SECS {
+            ticks.pop_front();
+        } else {
+            break;
+        }
+    }
+}
+
+/// 清空速率窗口（断开连接时调用，避免仪表盘残留断开前的旧速率）
+fn clear_danmaku_ticks(app: &AppHandle) {
+    app.state::<AppState>().danmaku_ticks.lock().unwrap().clear();
 }
 
 /// Overlay 窗口状态（供 UI 同步开关与弹幕样式）
 struct OverlayState {
     clickthrough: Mutex<bool>,
+    /// 始终置顶（窗口 API 无 getter，需内存态供仪表盘读取；初值与创建窗口时一致）
+    always_on_top: Mutex<bool>,
     style: Mutex<config::OverlayStyle>,
     /// 弹幕过滤配置（内存态，供 Overlay 实时读取；变更广播 danmaku-filter 事件）
     filter: Mutex<config::DanmakuFilter>,
@@ -54,6 +88,7 @@ impl Default for OverlayState {
     fn default() -> Self {
         Self {
             clickthrough: Mutex::new(false),
+            always_on_top: Mutex::new(true),
             style: Mutex::new(config::OverlayStyle::default()),
             filter: Mutex::new(config::DanmakuFilter::default()),
             bounds: Mutex::new(None),
@@ -169,11 +204,45 @@ fn overlay_is_visible(app: AppHandle) -> bool {
 
 /// 开关始终置顶
 #[tauri::command]
-fn overlay_set_always_on_top(app: AppHandle, enabled: bool) -> Result<bool, String> {
+fn overlay_set_always_on_top(
+    app: AppHandle,
+    state: State<'_, OverlayState>,
+    enabled: bool,
+) -> Result<bool, String> {
     let win = overlay_window(&app).ok_or("Overlay 窗口未创建")?;
     win.set_always_on_top(enabled)
         .map_err(|e| format!("设置置顶失败: {e}"))?;
+    *state.always_on_top.lock().unwrap() = enabled;
     Ok(enabled)
+}
+
+/// 仪表盘状态快照（主界面直播间页底部只读展示，前端按秒轮询）
+#[tauri::command]
+fn get_dashboard_status(app: AppHandle) -> serde_json::Value {
+    let overlay = {
+        let st = app.state::<OverlayState>();
+        json!({
+            "visible": overlay_window(&app).and_then(|w| w.is_visible().ok()).unwrap_or(false),
+            "clickthrough": *st.clickthrough.lock().unwrap(),
+            "always_on_top": *st.always_on_top.lock().unwrap(),
+        })
+    };
+
+    let tts = app.state::<tts::TtsState>().config();
+
+    let now = Instant::now();
+    let danmaku_rate = {
+        let st = app.state::<AppState>();
+        let mut ticks = st.danmaku_ticks.lock().unwrap();
+        prune_ticks(&mut ticks, now);
+        ticks.len()
+    };
+
+    json!({
+        "overlay": overlay,
+        "tts": { "enabled": tts.enabled, "filter": tts.filter },
+        "danmaku_rate": danmaku_rate,
+    })
 }
 /// 读取当前 Overlay 弹幕样式
 #[tauri::command]
@@ -437,6 +506,7 @@ async fn connect_room(
 #[tauri::command]
 fn disconnect_room(app: AppHandle, state: State<'_, AppState>) {
     *state.status.lock().unwrap() = RoomStatus::Disconnected;
+    clear_danmaku_ticks(&app);
     if let Some(token) = state.cancel.lock().unwrap().take() {
         token.cancel();
     }
@@ -555,6 +625,7 @@ fn finish_connection(app: &AppHandle, cancel: &CancellationToken, result: Result
         return;
     }
     *st.status.lock().unwrap() = RoomStatus::Disconnected;
+    clear_danmaku_ticks(app);
     match result {
         Ok(()) => {
             let _ = app.emit("room-status", json!({ "state": "disconnected" }));
@@ -573,6 +644,7 @@ pub fn run() {
             status: Mutex::new(RoomStatus::Disconnected),
             cancel: Mutex::new(None),
             auth: Mutex::new(None),
+            danmaku_ticks: Mutex::new(VecDeque::new()),
         })
         .manage(OverlayState::default())
         .manage(tts::TtsState::new(config::TtsConfig::default()))
@@ -750,6 +822,7 @@ pub fn run() {
             overlay_get_clickthrough,
             overlay_is_visible,
             overlay_set_always_on_top,
+            get_dashboard_status,
             overlay_get_style,
             overlay_set_style,
             danmaku_get_filter,
@@ -773,4 +846,42 @@ pub fn run() {
             flush_overlay_bounds(handle);
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    fn ago(now: Instant, secs: u64) -> Instant {
+        now - Duration::from_secs(secs)
+    }
+
+    #[test]
+    fn 弹幕速率窗口只保留窗口内的时刻() {
+        let now = Instant::now();
+        let mut ticks = VecDeque::from(vec![
+            ago(now, 15),
+            ago(now, RATE_WINDOW_SECS), // 恰好 10s：已在窗口外
+            ago(now, 9),
+            now,
+        ]);
+        prune_ticks(&mut ticks, now);
+        assert_eq!(ticks.len(), 2);
+    }
+
+    #[test]
+    fn 弹幕速率裁剪空队列不报错() {
+        let mut ticks = VecDeque::new();
+        prune_ticks(&mut ticks, Instant::now());
+        assert!(ticks.is_empty());
+    }
+
+    #[test]
+    fn 弹幕速率全部过期时清空() {
+        let now = Instant::now();
+        let mut ticks = VecDeque::from(vec![ago(now, 30), ago(now, 11)]);
+        prune_ticks(&mut ticks, now);
+        assert!(ticks.is_empty());
+    }
 }
