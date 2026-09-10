@@ -5,4 +5,5 @@ pub mod event;
 pub mod login;
 pub mod parser;
 pub mod protocol;
+pub mod send;
 pub mod wbi;
