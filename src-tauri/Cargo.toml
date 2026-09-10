@@ -1,6 +1,6 @@
 [package]
 name = "bili-danmu"
-version = "0.8.1"
+version = "1.0.0"
 description = "轻量级 B 站直播弹幕助手"
 license = "GPL-3.0"
 edition = "2021"
