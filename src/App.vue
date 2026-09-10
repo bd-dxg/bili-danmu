@@ -68,7 +68,7 @@ const current = ref<NavKey>("room");
 .brand {
   padding: 16px 14px;
   font-weight: 600;
-  font-size: 15px;
+  font-size: 17px;
   color: var(--accent);
   border-bottom: 1px solid var(--border);
 }
@@ -87,7 +87,7 @@ nav {
   text-align: left;
   padding: 9px 12px;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .nav-item:hover {
@@ -106,12 +106,12 @@ nav {
 }
 
 .placeholder h2 {
-  font-size: 16px;
+  font-size: 18px;
   margin-bottom: 8px;
 }
 
 .placeholder p {
   color: var(--text-faint);
-  font-size: 13px;
+  font-size: 15px;
 }
 </style>
