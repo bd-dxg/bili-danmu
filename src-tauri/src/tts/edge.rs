@@ -25,8 +25,8 @@ const SEC_MS_GEC_VERSION: &str = "1-143.0.3650.75";
 const WIN_EPOCH: i64 = 11_644_473_600;
 /// 输出格式：服务端只支持 MP3 系列，raw PCM 会被直接断连（已实测）
 const OUTPUT_FORMAT: &str = "audio-24khz-48kbitrate-mono-mp3";
-/// 单条弹幕合成的整体超时
-const SYNTH_TIMEOUT: Duration = Duration::from_secs(20);
+/// 收流阶段超时（整条合成的总超时由调用方 `tts::SYNTH_TIMEOUT` 包住，含建连）
+const RECV_TIMEOUT: Duration = Duration::from_secs(20);
 /// Edge 朗读页面来源，服务端会校验
 const ORIGIN: &str = "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold";
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0";
@@ -162,15 +162,13 @@ fn edge_headers() -> Vec<(&'static str, String)> {
     ]
 }
 
-/// 合成一段文本为 MP3 字节；失败返回可读原因（调用方只记录，不重试，避免刷屏）
+/// Edge TTS WebSocket 连接（原生 TLS）
+type Ws = tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+/// 建立一条 Edge TTS WebSocket（DRM 令牌 + 服务端校验必需的请求头）
 ///
-/// `rate_pct` / `volume_pct` 为相对基准的百分比偏移（如 -20 表示 -20%）。
-pub async fn synthesize(
-    voice: &str,
-    rate_pct: i32,
-    volume_pct: i32,
-    text: &str,
-) -> Result<Vec<u8>, String> {
+/// 每条合成单独建连：服务端**不接受**同一条连接发多轮（实测第二轮直接 RST 10054），故不复用。
+async fn connect() -> Result<Ws, String> {
     let url = format!(
         "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1\
          ?TrustedClientToken={TRUSTED_CLIENT_TOKEN}\
@@ -191,39 +189,61 @@ pub async fn synthesize(
             }
         }
     }
-
-    let (mut ws, _) = tokio_tungstenite::connect_async(req)
+    let (ws, _) = tokio_tungstenite::connect_async(req)
         .await
         .map_err(|e| format!("Edge TTS 连接失败（网络不可达或被限流）: {e}"))?;
+    Ok(ws)
+}
 
-    let now = date_string();
-    let config = format!(
+/// speech.config 帧：声明输出格式（每轮合成前都要先发）
+fn speech_config_frame(now: &str) -> String {
+    format!(
         "X-Timestamp:{now}\r\n\
          Content-Type:application/json; charset=utf-8\r\n\
          Path:speech.config\r\n\r\n\
          {{\"context\":{{\"synthesis\":{{\"audio\":{{\"metadataoptions\":{{\
          \"sentenceBoundaryEnabled\":\"false\",\"wordBoundaryEnabled\":\"false\"}},\
          \"outputFormat\":\"{OUTPUT_FORMAT}\"}}}}}}}}\r\n"
-    );
-    ws.send(Message::Text(config.into()))
-        .await
-        .map_err(|e| format!("发送 speech.config 失败: {e}"))?;
+    )
+}
 
-    let ssml = build_ssml(voice, rate_pct, volume_pct, text);
-    let request = format!(
+/// ssml 请求帧
+fn ssml_frame(now: &str, ssml: &str) -> String {
+    format!(
         "X-RequestId:{}\r\n\
          Content-Type:application/ssml+xml\r\n\
          X-Timestamp:{now}Z\r\n\
          Path:ssml\r\n\r\n{ssml}",
         random_hex(16, false),
-    );
-    ws.send(Message::Text(request.into()))
+    )
+}
+
+/// 在一条连接上合成一轮（发送 speech.config + ssml 并收流）
+async fn synth_turn(
+    ws: &mut Ws,
+    voice: &str,
+    rate_pct: i32,
+    volume_pct: i32,
+    text: &str,
+) -> Result<Vec<u8>, String> {
+    let now = date_string();
+    ws.send(Message::Text(speech_config_frame(&now).into()))
+        .await
+        .map_err(|e| format!("发送 speech.config 失败: {e}"))?;
+
+    let ssml = build_ssml(voice, rate_pct, volume_pct, text);
+    ws.send(Message::Text(ssml_frame(&now, &ssml).into()))
         .await
         .map_err(|e| format!("发送 SSML 失败: {e}"))?;
 
+    recv_turn(ws).await
+}
+
+/// 收一轮合成的音频，直到 turn.end
+async fn recv_turn(ws: &mut Ws) -> Result<Vec<u8>, String> {
     // 收流：文本帧判结束、二进制帧抠音频（[2 字节大端 header 长度][header][\r\n][音频]）
     let mut audio: Vec<u8> = Vec::new();
-    let deadline = tokio::time::Instant::now() + SYNTH_TIMEOUT;
+    let deadline = tokio::time::Instant::now() + RECV_TIMEOUT;
     loop {
         let next = tokio::time::timeout_at(deadline, ws.next())
             .await
@@ -263,15 +283,45 @@ pub async fn synthesize(
     Ok(audio)
 }
 
+/// 合成一段文本为 MP3 字节（每条新建连接）；失败返回可读原因（调用方只记录，不重试，避免刷屏）
+///
+/// `rate_pct` / `volume_pct` 为相对基准的百分比偏移（如 -20 表示 -20%）。
+pub async fn synthesize(
+    voice: &str,
+    rate_pct: i32,
+    volume_pct: i32,
+    text: &str,
+) -> Result<Vec<u8>, String> {
+    let mut ws = connect().await?;
+    synth_turn(&mut ws, voice, rate_pct, volume_pct, text).await
+}
+
 /// 拼 SSML；正文需 XML 转义，控制字符替换为空格（否则服务端报错）
 fn build_ssml(voice: &str, rate_pct: i32, volume_pct: i32, text: &str) -> String {
     let body = xml_escape(&strip_control_chars(text));
+    let voice = safe_voice(voice);
     format!(
         "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>\
          <voice name='{voice}'>\
          <prosody pitch='+0Hz' rate='{rate_pct:+}%' volume='{volume_pct:+}%'>{body}</prosody>\
          </voice></speak>"
     )
+}
+
+/// 音色名只允许字母/数字/`-`/`_`（真实音色形如 zh-CN-XiaoxiaoNeural）。
+///
+/// `voice` 来自配置，是 SSML 里唯一没走 `xml_escape` 的插值点：一个 `'` 就能拆坏 name 属性，
+/// 故只保留白名单字符；全被过滤掉时回退内置默认音色，而不是留下空 name。
+fn safe_voice(voice: &str) -> String {
+    let cleaned: String = voice
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+        .collect();
+    if cleaned.is_empty() {
+        VOICES[0].0.to_string()
+    } else {
+        cleaned
+    }
 }
 
 /// 服务端不接受的控制字符（0-8 / 11-12 / 14-31）替换为空格
@@ -410,6 +460,19 @@ mod tests {
     }
 
     #[test]
+    fn voice_name_is_whitelisted() {
+        // voice 是 SSML 里唯一没走 xml_escape 的插值点：一个引号就能拆坏 name 属性
+        assert_eq!(
+            safe_voice("zh-CN-XiaoxiaoNeural'/><x a='1"),
+            "zh-CN-XiaoxiaoNeuralxa1"
+        );
+        // 全被过滤掉 → 回退内置默认音色，而不是生成空 name
+        assert_eq!(safe_voice("'\"<>=%$"), VOICES[0].0);
+        assert!(build_ssml("zh-CN-XiaoyiNeural", 0, 0, "a")
+            .contains("<voice name='zh-CN-XiaoyiNeural'>"));
+    }
+
+    #[test]
     fn date_string_shape() {
         let s = date_string();
         assert!(s.ends_with(" GMT+0000 (Coordinated Universal Time)"));
@@ -451,6 +514,31 @@ mod tests {
         assert_eq!(voices[0].0, "zh-CN-XiaoxiaoNeural", "普通话应排最前");
         assert!(voices.iter().any(|(id, _)| id == "zh-HK-HiuGaaiNeural"));
         println!("拉取到 {} 个中文音色: {voices:?}", voices.len());
+    }
+
+    /// 真实联网突发测试：同一进程内连续 10 条、无间隔，统计失败率
+    /// （定位「高频时 10054 / 超时」是本机频率问题还是服务端限流）
+    /// `cargo test --lib -- --ignored edge_burst_live --nocapture`
+    #[test]
+    #[ignore]
+    fn edge_burst_live() {
+        tauri::async_runtime::block_on(async {
+            let (mut ok, mut fail) = (0u32, 0u32);
+            for i in 1..=10 {
+                let start = std::time::Instant::now();
+                match synthesize("zh-CN-YunjianNeural", 0, 0, &format!("第{i}条突发测试")).await {
+                    Ok(a) => {
+                        ok += 1;
+                        println!("第 {i:>2} 条: OK   {} 字节  {:?}", a.len(), start.elapsed());
+                    }
+                    Err(e) => {
+                        fail += 1;
+                        println!("第 {i:>2} 条: 失败 {e}  {:?}", start.elapsed());
+                    }
+                }
+            }
+            println!("--- 成功 {ok} / 失败 {fail} ---");
+        });
     }
 
     /// 真实联网合成（默认忽略）：验证整条握手 + 收流链路，微软改协议时跑这个

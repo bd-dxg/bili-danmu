@@ -14,6 +14,7 @@ const errorMsg = ref("");
 const recentRooms = ref<RecentRoom[]>([]);
 
 let unlistenStatus: UnlistenFn | undefined;
+let unlistenRecent: UnlistenFn | undefined;
 
 // 连接中/已连接时锁定房间号输入框与最近面包屑：改号需先断开，避免输入框与实际连接目标不一致
 const locked = computed(
@@ -83,14 +84,17 @@ onMounted(async () => {
     status.value = e.payload;
     if (e.payload.state === "connected") {
       errorMsg.value = "";
-      // 连接成功时 Rust 侧刚好写入最近房间（含主播名），刷新面包屑
-      void loadRecentRooms();
     }
+  });
+  // 最近房间由 Rust 后台任务抽取（与连接并行，不阻塞弹幕会话），写完广播一次
+  unlistenRecent = await listen("recent-rooms-changed", () => {
+    void loadRecentRooms();
   });
 });
 
 onUnmounted(() => {
   unlistenStatus?.();
+  unlistenRecent?.();
 });
 </script>
 

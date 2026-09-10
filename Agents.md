@@ -48,3 +48,7 @@
 - Edge TTS 协议集中在 `tts/edge.rs`：改协议用 `scripts/edge-tts-probe.ps1` 验证（`-DumpHeader` 看帧头、`-OutputFormat` 换格式），联网单测是 `cargo test --lib -- --ignored edge_synthesizes_mp3_live` / `voice_list_fetches_live`
 - `tts/mod.rs` 的 `NAMED_CHARS`（`_`→下划线、`ω`→欧米伽等噪声字符表）是逐字实测得出的，加字符前先用探测脚本实测 Δ 字节数；实测数据在 `Task/findings.md`
 - TTS 播放走 winmm MCI + 固定临时文件 `%TEMP%\bili-danmu-tts.mp3`，依赖队列串行（同一时刻只有一个 MCI 句柄）；`max_len` 只约束弹幕正文，不含身份前缀与用户名
+- TTS 停播有两条互不相同的路径，别合并：①`epoch` 递增 = 作废**还没开播**的在途音频（积压时打断；正在念的那条念完，否则开了念用户名时只能听到半句名字）；②`player::play_mp3` 的 `stop_now` 闭包 = 每 100ms 查总开关，关掉朗读时立刻停（试听 `force` 项除外）。不要改回「从其他线程直接调 MCI stop」：它会与 open/play 交错，且阻塞弹幕回调
+- 单条合成有两层超时：`tts::SYNTH_TIMEOUT`（调用方包住整条，含建连）与 `edge::RECV_TIMEOUT`（收流阶段），别只留一个
+- Edge TTS **不接受连接复用**：同一条连接发第二轮 speech.config + ssml 必被 RST（10054，实测）。`synthesize` 每条新建连接，别改成连接池/长连接
+- 合成失败必须走熔断退避（`tts/mod.rs`：连续 2 次 → 清空积压 + 1/2/4…封顶 60s）：失败是 ~0.1s 级响应、成功是 ~2s，若“失败立即重试下一条”，请求速率会瞬时飙升十倍，把服务端限流撞得更紧并自我维持（表现为持续 10054 + 20s 黑洞超时）。排查用 `cargo test --lib -- --ignored edge_burst_live --nocapture`

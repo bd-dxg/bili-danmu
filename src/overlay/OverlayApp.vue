@@ -329,7 +329,7 @@ onUnmounted(() => {
   opacity: 1;
 }
 
-/* 身份前缀列：固定 4em 宽度；chip 靠右紧贴 LV，无前缀行整列留空 → LV 各行同列对齐 */
+/* 身份前缀列：固定 4.8em 宽度；chip 靠右紧贴 LV，无前缀行整列留空 → LV 各行同列对齐 */
 .role-slot {
   display: inline-flex;
   align-items: center;

@@ -2,19 +2,36 @@
 //!
 //! MCI 只认文件（不能吃内存缓冲），因此先把 MP3 落到临时文件再播；
 //! Edge TTS 的输出固定是 MP3（服务端不支持 raw PCM，见 `Task/findings.md`）。
+//!
+//! 停止不跨线程调 MCI：由调用方传闭包进来，播放端每个轮询自己查（见 `play_mp3` 注释）。
 
 use std::os::windows::ffi::OsStrExt;
 use std::time::Duration;
 use windows_sys::Win32::Media::Multimedia::{mciGetErrorStringW, mciSendStringW};
 
-/// MCI 设备别名（进程内唯一；队列串行播放，不会有两个句柄并发）
+/// MCI 句柄别名：进程内唯一（队列串行播放，不会有两个句柄并发）
 const ALIAS: &str = "bilidanmu_tts";
 /// 轮询播放状态的间隔与上限（100ms × 600 = 60s）
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 const POLL_MAX: u32 = 600;
 
 /// 播放一段 MP3（阻塞至播完），失败返回可读原因
-pub fn play_mp3(data: &[u8]) -> Result<(), String> {
+///
+/// - `expired()` 开播前查一次：true 表示这条已被更新的弹幕顶掉，不响一声直接丢
+/// - `stop_now()` 轮询里每次查：true 表示要立刻停（关掉朗读开关）
+///
+/// 「被打断」不掐正在念的这条：音频是整条合成的，掐断只能听到半句（开了念用户名时
+/// 甚至连正文都没开始）。积压交给队列丢最旧 + `expired` 作废在途音频，
+/// 延迟上限仍是一条朗读时长。
+pub fn play_mp3(
+    data: &[u8],
+    expired: impl Fn() -> bool,
+    stop_now: impl Fn() -> bool,
+) -> Result<(), String> {
+    // 从合成完毕到轮到播放之间可能已被顶掉（关了朗读 / 来了更新的弹幕）：连临时文件都不必落盘
+    if expired() {
+        return Ok(());
+    }
     let path = std::env::temp_dir().join("bili-danmu-tts.mp3");
     std::fs::write(&path, data).map_err(|e| format!("写入临时音频失败: {e}"))?;
 
@@ -28,6 +45,9 @@ pub fn play_mp3(data: &[u8]) -> Result<(), String> {
         send(&format!("play {ALIAS}"))?;
         for _ in 0..POLL_MAX {
             std::thread::sleep(POLL_INTERVAL);
+            if stop_now() {
+                break;
+            }
             // 查询失败（句柄已失效）按播放结束处理，避免死等
             if send(&format!("status {ALIAS} mode")).map_or(true, |m| m.trim() == "stopped") {
                 break;
@@ -38,12 +58,6 @@ pub fn play_mp3(data: &[u8]) -> Result<(), String> {
     let _ = send(&format!("close {ALIAS}"));
     let _ = std::fs::remove_file(&path);
     result
-}
-
-/// 立即停止当前播放（关闭朗读开关时调用）
-pub fn stop() {
-    let _ = send(&format!("stop {ALIAS}"));
-    let _ = send(&format!("close {ALIAS}"));
 }
 
 /// 发一条 MCI 命令，返回其字符串结果（失败带 MCI 错误描述）
