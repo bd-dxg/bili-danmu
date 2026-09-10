@@ -114,6 +114,7 @@ dependencies = [
  "flate2",
  "futures-util",
  "md-5",
+ "native-tls",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
