@@ -35,6 +35,12 @@ export interface DanmakuEvent {
   is_admin: boolean;
 }
 
+/** Overlay 弹幕行数据：弹幕事件 + 展示所需的派生标记 */
+export interface DisplayDanmaku extends DanmakuEvent {
+  /** 粉丝牌来自当前房间（决定本房牌绿 / 其它房牌灰的配色） */
+  isRoomMedal: boolean;
+}
+
 /** Overlay 弹幕样式（Rust ↔ Vue） */
 export interface OverlayStyle {
   font_size: number;
