@@ -1,6 +1,6 @@
 import { computed, onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
-import { DEFAULT_TTS_CONFIG, type TtsConfig, type TtsVoice } from "../types/ipc";
+import { DEFAULT_DANMAKU_FILTER, DEFAULT_TTS_CONFIG, type TtsConfig, type TtsVoice } from "../types/ipc";
 
 /**
  * 朗读配置的读取 / 编辑 / 落盘，以及音色列表的拉取与有效性校验。
@@ -12,7 +12,11 @@ export function useTtsConfig(
   showSaved: () => void,
   showError: (e: unknown) => void,
 ) {
-  const config = ref<TtsConfig>({ ...DEFAULT_TTS_CONFIG });
+  // filter 要另起一份：DEFAULT_TTS_CONFIG.filter 指向模块级常量，直接展开会让表单改到常量上
+  const config = ref<TtsConfig>({
+    ...DEFAULT_TTS_CONFIG,
+    filter: { ...DEFAULT_DANMAKU_FILTER },
+  });
   const voices = ref<TtsVoice[]>([]);
   // 试听按钮防连点（合成 + 播放需要一两秒）
   const testing = ref(false);
