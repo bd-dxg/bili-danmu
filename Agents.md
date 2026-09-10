@@ -4,6 +4,16 @@
 
 轻量级 B 站直播弹幕桌面助手（Windows）：连接 B 站直播间 → 获取实时弹幕 → 在桌面透明悬浮层（Overlay）显示 + 可选 Edge TTS 朗读，供 OBS 推流主播看/听弹幕。Tauri 2 多窗口架构：主窗口（配置）+ 透明悬浮窗（Overlay）+ 发送弹幕框（Sender，始终吸附 Overlay 下方）。
 
+## 下一阶段方向：礼物系统（未开工）
+
+礼物 / SC / 上舰的**弹幕窗渲染 + 朗读**。当前 `parser.rs` 的 `parse_payload` 只认 `DANMU_MSG`，其余命令直接丢弃，所以要先扩解析与事件模型。
+
+- 解析：`SEND_GIFT`、`COMBO_SEND`（连击）、`SUPER_CHAT_MESSAGE`（SC）、`GUARD_BUY`（上舰）
+- 事件模型：`BilibiliEvent` 目前只有 `Danmaku` 一个变体，`ws.rs` 里是按单变体解构的（`let BilibiliEvent::Danmaku(d) = ev`），加变体时必须一并改
+- 渲染：礼物行与普通弹幕区分视觉，沿用现有徽章列对齐（`DanmakuRow` + `DisplayDanmaku`）
+- 朗读：接现有 Edge TTS 队列（`tts::on_danmaku` 旁再开一个入口），文案含礼物名 / 数量 / 用户名
+- 风险：高频小礼物（连击、免费礼物）必须节流或过滤，否则会淹掉弹幕朗读（朗读是串行队列，音频时长 ~0.21s/字）
+
 ## 技术栈
 
 - 前端：Vue 3（`<script setup>`）+ Vite + TypeScript，包管理 pnpm
@@ -39,8 +49,8 @@
     - `config.rs` 配置读写与全局互斥、`config/types.rs` 结构体与默认值、`config/crypto.rs` DPAPI 加解密
 - 多窗口：根目录 `index.html`（主窗口）+ `overlay.html`（透明悬浮窗）+ `sender.html`（发送弹幕框），Tauri 配置见 `src-tauri/tauri.conf.json` 与 `capabilities/default.json`
 - IPC 双向类型约定：Rust command 与 `src/types/ipc.ts` 保持一致，改动协议时两端同步
-- 注释、commit、PRD（`prd.md`）一律简体中文
-- PRD 即功能需求来源：已完成/规划状态以 `README.md` 表格和 `prd.md` 为准（未做项：礼物/SC/舰队等事件解析、滚动弹幕、顶弹、用户屏蔽、Windows 系统 TTS、单实例、全局快捷键、开机自启、统一日志）
+- 注释、commit 一律简体中文；PRD（`prd.md`）已停止维护（见下）
+- 功能状态与规划以 `README.md` 表格为准（未做项：礼物系统、滚动弹幕、顶弹、用户屏蔽、Windows 系统 TTS、单实例、全局快捷键、开机自启、统一日志）；`prd.md` 仅作历史设计参考，新需求不要再往上写
 
 ## 版本号与发布
 
