@@ -380,7 +380,7 @@ fn get_login_info(state: State<'_, AppState>) -> serde_json::Value {
 /// 生成 B 站登录二维码
 #[tauri::command]
 async fn qr_generate() -> Result<bilibili::login::QrData, String> {
-    let client = bilibili::client::http_client();
+    let client = bilibili::api::http_client();
     bilibili::login::qr_generate(&client).await
 }
 
@@ -391,7 +391,7 @@ async fn qr_poll(
     state: State<'_, AppState>,
     key: String,
 ) -> Result<bilibili::login::PollResult, String> {
-    let client = bilibili::client::http_client();
+    let client = bilibili::api::http_client();
     match bilibili::login::qr_poll(&client, &key).await? {
         bilibili::login::PollResult::Success { cookies } => {
             let uid = bilibili::login::cookie_value(&cookies, "DedeUserID")
@@ -455,7 +455,7 @@ async fn send_danmaku(state: State<'_, AppState>, msg: String) -> Result<(), Str
         }
     };
 
-    let client = bilibili::client::http_client();
+    let client = bilibili::api::http_client();
     bilibili::send::send_danmaku(&client, &cookies, room_id, msg).await
 }
 
@@ -465,7 +465,7 @@ async fn send_danmaku(state: State<'_, AppState>, msg: String) -> Result<(), Str
 fn spawn_recent_room(app: AppHandle, client: reqwest::Client, room_id: u32) {
     tauri::async_runtime::spawn(async move {
         // 抓不到主播名（接口失败）也只存房间号，前端回退显示房间号
-        let uname = bilibili::client::fetch_anchor_uname(&client, room_id).await;
+        let uname = bilibili::api::fetch_anchor_uname(&client, room_id).await;
         let _ = config::save_recent_room(&app, &config::RecentRoom { room_id, uname });
         let _ = app.emit("recent-rooms-changed", ());
     });
@@ -525,10 +525,10 @@ const RECONNECT_MAX_BACKOFF_SECS: u64 = 30;
 /// 超过 MAX_CONNECT_ATTEMPTS 次仍失败才报 error；用户可随时断开（取消令牌中止重试）。
 fn spawn_connection(app: AppHandle, short_id: u32, cancel: CancellationToken) {
     tauri::async_runtime::spawn(async move {
-        let client = bilibili::client::http_client();
+        let client = bilibili::api::http_client();
 
         // 1. 短号解析真实房间号
-        let resolved = match bilibili::client::resolve_room(&client, short_id).await {
+        let resolved = match bilibili::api::resolve_room(&client, short_id).await {
             Ok(r) => r,
             Err(e) => {
                 finish_connection(&app, &cancel, Err(e));
@@ -575,7 +575,7 @@ fn spawn_connection(app: AppHandle, short_id: u32, cancel: CancellationToken) {
 
             // 弹幕服务器配置（登录态优先；失败自动回退游客 token）
             let (conf, guest_mode) =
-                match bilibili::client::fetch_danmu_conf(&client, resolved.room_id, &cookies).await
+                match bilibili::api::fetch_danmu_conf(&client, resolved.room_id, &cookies).await
                 {
                     Ok(v) => v,
                     Err(e) => {
@@ -590,7 +590,7 @@ fn spawn_connection(app: AppHandle, short_id: u32, cancel: CancellationToken) {
             let auth_uid = if guest_mode { 0 } else { uid };
 
             // WS 会话（认证成功后 client 会 emit connected）；断开返回 Err 进入重连
-            match bilibili::client::run_ws_session(
+            match bilibili::ws::run_ws_session(
                 &app,
                 resolved.room_id,
                 auth_uid,
