@@ -169,6 +169,8 @@ onMounted(async () => {
   } catch {
     /* ignore */
   }
+  // 强制触发字体渲染重计算，避免首次加载时字体像素化
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   // 初始同步过滤配置
   try {
     filter.value = await invoke<DanmakuFilter>("danmaku_get_filter");
