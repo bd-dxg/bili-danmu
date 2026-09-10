@@ -76,7 +76,7 @@ function filterSummary(f: DanmakuFilter): string {
         </div>
       </div>
     </div>
-    <p class="tip">只读展示；修改请到「弹幕」或「朗读」页。</p>
+    <p class="dashboard-tip">只读展示；修改请到「弹幕」或「朗读」页。</p>
   </div>
 </template>
 
@@ -147,7 +147,8 @@ h3 {
   overflow-wrap: anywhere;
 }
 
-.tip {
+/* 页面自己的说明文字（全局 .tip 是设置页的，字号与间距不同，故另起一个类） */
+.dashboard-tip {
   font-size: 13px;
   color: var(--text-faint);
   padding-top: 8px;
