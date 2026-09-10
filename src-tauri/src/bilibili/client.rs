@@ -387,6 +387,8 @@ fn handle_frame(app: &tauri::AppHandle, room_id: u32, data: &[u8]) -> Result<(),
                     for ev in parser::parse_payload(&body)? {
                         // 单变体：所有事件都是弹幕
                         let BilibiliEvent::Danmaku(d) = ev;
+                        // 朗读是与显示并列的独立消费者（关闭朗读不影响弹幕窗）
+                        crate::tts::on_danmaku(app, &d);
                         let _ = app.emit("danmaku", d);
                     }
                 }

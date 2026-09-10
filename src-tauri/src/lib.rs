@@ -6,6 +6,7 @@
 
 mod bilibili;
 mod config;
+mod tts;
 
 use std::sync::Mutex;
 
@@ -211,6 +212,52 @@ fn danmaku_set_filter(
     *state.filter.lock().unwrap() = filter.clone();
     let _ = app.emit("danmaku-filter", &filter);
     config::save_danmaku_filter(&app, &filter)
+}
+
+/// 读取 TTS 朗读配置
+#[tauri::command]
+fn tts_get_config(state: State<'_, tts::TtsState>) -> config::TtsConfig {
+    state.config()
+}
+
+/// 更新 TTS 朗读配置：内存态实时生效（下一段朗读即生效）并持久化
+#[tauri::command]
+fn tts_set_config(
+    app: AppHandle,
+    state: State<'_, tts::TtsState>,
+    tts: config::TtsConfig,
+) -> Result<(), String> {
+    state.set_config(tts.clone());
+    config::save_tts_config(&app, &tts)
+}
+
+/// 试听当前音色/语速（不受总开关限制）
+#[tauri::command]
+fn tts_test_speak(app: AppHandle, text: Option<String>) {
+    let text = text.unwrap_or_else(|| "试听效果，欢迎来到直播间".into());
+    tts::speak_test(&app, &text);
+}
+
+/// 当前音色列表（内置中文音色兜底，拉取成功后为微软完整列表）
+#[tauri::command]
+fn tts_list_voices(state: State<'_, tts::TtsState>) -> Vec<serde_json::Value> {
+    voice_options(&state.voices())
+}
+
+/// 从微软拉取完整音色列表（当前 322 个）并缓存到内存
+#[tauri::command]
+async fn tts_refresh_voices(app: AppHandle) -> Result<Vec<serde_json::Value>, String> {
+    let voices = tts::edge::fetch_voices().await?;
+    let state = app.state::<tts::TtsState>();
+    state.set_voices(voices.clone());
+    Ok(voice_options(&voices))
+}
+
+fn voice_options(voices: &[(String, String)]) -> Vec<serde_json::Value> {
+    voices
+        .iter()
+        .map(|(id, label)| json!({ "id": id, "label": label }))
+        .collect()
 }
 
 /// 查询 Overlay 当前尺寸（逻辑像素）
@@ -522,6 +569,7 @@ pub fn run() {
             auth: Mutex::new(None),
         })
         .manage(OverlayState::default())
+        .manage(tts::TtsState::new(config::TtsConfig::default()))
         .setup(|app| {
             // 加载持久化配置：登录态 → AppState.auth；样式/位置 → OverlayState
             let cfg = config::load_config(app.handle());
@@ -537,6 +585,13 @@ pub fn run() {
                 *ov.style.lock().unwrap() = cfg.overlay_style.clone();
                 *ov.filter.lock().unwrap() = cfg.danmaku_filter.clone();
             }
+            // TTS：恢复朗读配置并启动串行朗读 worker（与弹幕显示完全解耦）
+            app.state::<tts::TtsState>()
+                .set_config(cfg.tts.clone());
+            if cfg.tts.enabled {
+                eprintln!("[tts] 已恢复朗读开关，音色={}", cfg.tts.voice);
+            }
+            tts::spawn_worker(app.handle().clone());
 
             // Overlay：透明 / 无边框 / 置顶 / 可调整 / 跳过任务栏，恢复上次位置
             let mut win_builder = WebviewWindowBuilder::new(
@@ -693,6 +748,11 @@ pub fn run() {
             overlay_set_style,
             danmaku_get_filter,
             danmaku_set_filter,
+            tts_get_config,
+            tts_set_config,
+            tts_test_speak,
+            tts_list_voices,
+            tts_refresh_voices,
             get_recent_rooms,
             overlay_get_size,
             overlay_set_size,

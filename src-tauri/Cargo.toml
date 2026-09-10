@@ -21,7 +21,8 @@ tokio-util = { version = "0.7", features = ["rt"] }
 tokio-tungstenite = { version = "0.26", features = ["native-tls"] }
 reqwest = { version = "0.12", features = ["json", "gzip"] }
 md-5 = "0.10"
+sha2 = "0.10"
 futures-util = "0.3"
 brotli-decompressor = "4"
 flate2 = "1"
-windows-sys = { version = "0.61.2", features = ["Win32_Security_Cryptography", "Win32_Foundation"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Security_Cryptography", "Win32_Foundation", "Win32_Media_Multimedia"] }

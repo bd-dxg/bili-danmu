@@ -88,3 +88,48 @@ export const DEFAULT_DANMAKU_FILTER: DanmakuFilter = {
   enable_sensitive: false,
   sensitive_words: [],
 };
+
+/** Edge TTS 音色（tts_list_voices 返回） */
+export interface TtsVoice {
+  id: string;
+  label: string;
+}
+
+/** TTS 弹幕朗读配置（Rust ↔ Vue） */
+export interface TtsConfig {
+  /** 总开关 */
+  enabled: boolean;
+  /** Edge TTS 音色名 */
+  voice: string;
+  /** 语速百分比偏移（-50 = 半速，+50 = 1.5 倍速） */
+  rate_pct: number;
+  /** 音量百分比偏移 */
+  volume_pct: number;
+  /** 是否在正文前念用户名 */
+  read_username: boolean;
+  /** 是否在正文前念身份前缀（房管 / 舰长） */
+  read_role: boolean;
+  /** 弹幕正文最大朗读字数（不含身份前缀与用户名，0 = 不限制） */
+  max_len: number;
+  /** 待朗读队列上限（超出丢弃最旧的） */
+  max_queue: number;
+  /** 积压时打断当前朗读 */
+  interrupt_on_backlog: boolean;
+  /** 朗读筛选条件（与弹幕显示筛选相互独立） */
+  filter: DanmakuFilter;
+}
+
+/** TTS 默认配置 */
+export const DEFAULT_TTS_CONFIG: TtsConfig = {
+  enabled: false,
+  voice: "zh-CN-XiaoxiaoNeural",
+  rate_pct: 0,
+  volume_pct: 0,
+  read_username: false,
+  read_role: false,
+  // 15 字 ≈ 3.4s 音频；B 站弹幕上限 30–40 字（≈ 7–9s），全念完在高频房间会明显积压
+  max_len: 15,
+  max_queue: 5,
+  interrupt_on_backlog: true,
+  filter: DEFAULT_DANMAKU_FILTER,
+};

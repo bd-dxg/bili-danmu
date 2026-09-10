@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import DanmakuFilterPanel from "../components/DanmakuFilterPanel.vue";
 import {
   DEFAULT_DANMAKU_FILTER,
   type DanmakuFilter,
@@ -46,29 +47,11 @@ const opError = ref("");
 
 // 弹幕过滤配置（应用后 Rust 广播给 Overlay 实时生效并持久化）
 const filter = ref<DanmakuFilter>({ ...DEFAULT_DANMAKU_FILTER });
-// 敏感词文本（textarea 编辑态，保存时解析为词表）
-const sensitiveText = ref("");
 
-/** 解析敏感词文本：按换行/中英文逗号分隔，去空去重 */
-function parseWords(text: string): string[] {
-  return [
-    ...new Set(
-      text
-        .split(/[\n,，、]/)
-        .map((s) => s.trim())
-        .filter(Boolean),
-    ),
-  ];
-}
-
-async function applyFilter() {
+async function applyFilter(next: DanmakuFilter) {
+  filter.value = next;
   try {
-    // 数字输入框清空时 v-model.number 为 ''，避免脏值传给 Rust u32 反序列化报错
-    if (!Number.isFinite(filter.value.wealth_min)) {
-      filter.value.wealth_min = 0;
-    }
-    filter.value.sensitive_words = parseWords(sensitiveText.value);
-    await invoke("danmaku_set_filter", { filter: { ...filter.value } });
+    await invoke("danmaku_set_filter", { filter: { ...next } });
     savedTip.value = true;
     if (tipTimer) clearTimeout(tipTimer);
     tipTimer = setTimeout(() => (savedTip.value = false), 1200);
@@ -160,10 +143,9 @@ onMounted(async () => {
   } catch (e) {
     console.error("读取弹幕窗状态失败", e);
   }
-  // 读取过滤配置初始值（敏感词回填文本区）
+  // 读取过滤配置初始值
   try {
     filter.value = await invoke<DanmakuFilter>("danmaku_get_filter");
-    sensitiveText.value = filter.value.sensitive_words.join("\n");
   } catch (e) {
     console.error("读取过滤配置失败", e);
   }
@@ -408,78 +390,8 @@ onMounted(async () => {
 
     <section v-show="tab === 'filter'" class="tab-pane">
 
-    <div class="setting-card">
-      <div class="setting-row">
-        <span class="label">只显示舰长 / 房管弹幕</span>
-        <input
-          v-model="filter.enable_guard_admin"
-          type="checkbox"
-          class="switch"
-          @change="applyFilter()"
-        />
-      </div>
-
-      <div class="setting-row">
-        <span class="label">只显示有粉丝牌的弹幕</span>
-        <input
-          v-model="filter.enable_medal"
-          type="checkbox"
-          class="switch"
-          @change="applyFilter()"
-        />
-      </div>
-
-      <div class="setting-row">
-        <span class="label">
-          只显示荣耀等级 ≥
-          <input
-            v-model.number="filter.wealth_min"
-            type="number"
-            min="0"
-            max="100"
-            class="num-inline"
-            @change="applyFilter()"
-          />
-          的弹幕
-        </span>
-        <input
-          v-model="filter.enable_wealth"
-          type="checkbox"
-          class="switch"
-          @change="applyFilter()"
-        />
-      </div>
-      <p class="tip">
-        开启多条身份规则时，弹幕命中任意一条即显示（如同时开舰长/房管与粉丝牌，两者都算）。
-        全部关闭 = 不过滤身份。
-      </p>
-      <p v-if="savedTip" class="saved">✓ 已应用并保存</p>
-    </div>
-
-    <div class="setting-card words-card">
-      <div class="setting-row">
-        <span class="label">屏蔽含敏感词的弹幕</span>
-        <input
-          v-model="filter.enable_sensitive"
-          type="checkbox"
-          class="switch"
-          @change="applyFilter()"
-        />
-      </div>
-      <p class="tip">
-        每行一个关键词（也支持逗号分隔）。弹幕内容命中任一词即整条不显示；
-        该屏蔽对上述身份规则同样生效（舰长/房管发言命中也会被屏蔽）。
-      </p>
-      <textarea
-        v-model="sensitiveText"
-        class="words-input"
-        rows="5"
-        placeholder="每行一个关键词，如：加群 / 广告, 代练"
-      ></textarea>
-      <div class="words-actions">
-        <button class="save-btn" @click="applyFilter()">保存敏感词</button>
-      </div>
-    </div>
+    <DanmakuFilterPanel :model-value="filter" verb="显示" @change="applyFilter" />
+    <p v-if="savedTip" class="saved">✓ 已应用并保存</p>
 
     </section>
   </div>
@@ -609,67 +521,6 @@ onMounted(async () => {
   color: var(--text-faint);
   padding: 4px 0 10px;
   line-height: 1.6;
-}
-
-/* 弹幕过滤页：荣耀等级阈值内联输入 */
-.num-inline {
-  width: 56px;
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  color: var(--text);
-  padding: 3px 6px;
-  font-size: 15px;
-  outline: none;
-  text-align: center;
-}
-
-.num-inline:focus {
-  border-color: var(--accent);
-}
-
-/* 敏感词输入区 */
-.words-card .tip {
-  margin-top: 4px;
-}
-
-.words-input {
-  width: 100%;
-  box-sizing: border-box;
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--text);
-  padding: 8px 10px;
-  font-size: 15px;
-  font-family: inherit;
-  line-height: 1.6;
-  resize: vertical;
-  outline: none;
-}
-
-.words-input:focus {
-  border-color: var(--accent);
-}
-
-.words-actions {
-  display: flex;
-  justify-content: flex-end;
-  padding: 10px 0 12px;
-}
-
-.save-btn {
-  border: none;
-  border-radius: 6px;
-  padding: 6px 18px;
-  font-size: 15px;
-  color: #fff;
-  background: var(--accent);
-  cursor: pointer;
-}
-
-.save-btn:hover {
-  background: var(--accent-hover);
 }
 
 .error {
