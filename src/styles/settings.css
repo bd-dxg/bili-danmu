@@ -1,8 +1,11 @@
-/* 主窗口设置页公共样式：DanmakuView / TtsView 共用
+/* 设置页公共样式（主窗口全局，由 main.ts 引入）
  *
- * 只放两个页面逐字一致的规则（页内标签栏 + 设置卡片 + 通用表单控件）。
- * 页面独有的控件（颜色选择器、试听按钮、数字输入等）留在各自组件的 <style> 里，
- * 避免在这里堆条件分支；两页都存在的差异项（如 .select 的 min-width）也留在各页覆盖。
+ * 覆盖「页内标签栏 + 设置卡片 + 通用表单控件」这套主界面设置页共用的外观，
+ * 被 DanmakuView / TtsView / DanmakuFilterPanel 等组件直接使用。
+ *
+ * 因为是全局样式（没有 scoped 作用域标记），类名要与其它页面区分开：
+ * 通用名（.error / .tip 之类）不要加进来，避免和已有页面互相污染。
+ * 目前唯一例外是 .tip，已把 StatusDashboard 的同名类改为 .dashboard-tip。
  */
 
 /* 页内标签栏 */
@@ -35,6 +38,7 @@
   font-weight: 600;
 }
 
+/* 设置卡片与设置行 */
 .setting-card {
   background: var(--bg-side);
   border: 1px solid var(--border);
@@ -56,6 +60,7 @@
   border-bottom: none;
 }
 
+/* 通用表单控件 */
 .switch {
   width: 17px;
   height: 17px;
@@ -76,9 +81,29 @@
   border-color: var(--accent);
 }
 
+/* 说明文字与主操作按钮 */
 .tip {
   font-size: 14px;
   color: var(--text-faint);
   padding: 4px 0 10px;
   line-height: 1.6;
+}
+
+.save-btn {
+  border: none;
+  border-radius: 6px;
+  padding: 6px 18px;
+  font-size: 15px;
+  color: #fff;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+.save-btn:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.save-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
 }

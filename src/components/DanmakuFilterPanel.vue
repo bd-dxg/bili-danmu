@@ -127,39 +127,7 @@ function emitChange() {
 </template>
 
 <style scoped>
-.setting-card {
-  background: var(--bg-side);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 4px 14px;
-}
-
-.setting-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--border);
-  font-size: 16px;
-}
-
-.setting-row:last-of-type {
-  border-bottom: none;
-}
-
-.switch {
-  width: 17px;
-  height: 17px;
-  accent-color: var(--accent);
-}
-
-.tip {
-  font-size: 14px;
-  color: var(--text-faint);
-  padding: 4px 0 10px;
-  line-height: 1.6;
-}
+/* 设置卡片 / 设置行 / 开关 / 提示见全局 src/styles/settings.css */
 
 /* 荣耀等级阈值内联输入 */
 .num-inline {
@@ -206,19 +174,5 @@ function emitChange() {
   display: flex;
   justify-content: flex-end;
   padding: 10px 0 12px;
-}
-
-.save-btn {
-  border: none;
-  border-radius: 6px;
-  padding: 6px 18px;
-  font-size: 15px;
-  color: #fff;
-  background: var(--accent);
-  cursor: pointer;
-}
-
-.save-btn:hover {
-  background: var(--accent-hover);
 }
 </style>
