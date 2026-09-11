@@ -4,18 +4,20 @@ import RoomView from "./views/RoomView.vue";
 import DanmakuView from "./views/DanmakuView.vue";
 import AboutView from "./views/AboutView.vue";
 import TtsView from "./views/TtsView.vue";
+import StreamerView from "./views/StreamerView.vue";
 import LoginDialog from "./components/LoginDialog.vue";
 import { refreshLogin } from "./composables/useLogin";
 
 onMounted(refreshLogin);
 
-type NavKey = "room" | "danmaku" | "tts" | "about";
+type NavKey = "room" | "danmaku" | "tts" | "streamer" | "about";
 
 const navs: { key: NavKey; label: string }[] = [
-  { key: "room", label: "直播间" },
-  { key: "danmaku", label: "弹幕" },
-  { key: "tts", label: "朗读" },
-  { key: "about", label: "关于" },
+  { key: "room", label: "直播间连接" },
+  { key: "danmaku", label: "弹幕设置" },
+  { key: "tts", label: "朗读设置" },
+  { key: "streamer", label: "主播分区" },
+  { key: "about", label: "关于软件" },
 ];
 
 const current = ref<NavKey>("room");
@@ -42,6 +44,7 @@ const current = ref<NavKey>("room");
       <RoomView v-show="current === 'room'" />
       <DanmakuView v-show="current === 'danmaku'" />
       <TtsView v-show="current === 'tts'" />
+      <StreamerView v-show="current === 'streamer'" />
       <AboutView v-show="current === 'about'" />
     </main>
   </div>
@@ -86,6 +89,7 @@ nav {
   padding: 9px 12px;
   border-radius: 6px;
   font-size: 15px;
+  font-weight: 600;
 }
 
 .nav-item:hover {
