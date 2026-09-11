@@ -139,8 +139,9 @@ fn handle_frame(app: &tauri::AppHandle, room_id: u32, data: &[u8]) -> Result<(),
                                 crate::tts::on_danmaku(app, &d);
                                 let _ = app.emit("danmaku", d);
                             }
-                            // 打赏：礼物列表的独立消费者（门槛与连击合并见 gift 模块）
+                            // 打赏：礼物列表与礼物朗读两个独立消费者（门槛与开关各自配置）
                             BilibiliEvent::Backing(b) => {
+                                crate::tts::on_backing(app, &b);
                                 crate::gift::on_backing(app, b);
                             }
                         }

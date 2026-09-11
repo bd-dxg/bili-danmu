@@ -25,13 +25,15 @@ const FAIL_BACKOFF_MAX: Duration = Duration::from_secs(60);
 struct AudioChunk {
     data: Vec<u8>,
     epoch: u64,
-    /// 试听：不受总开关限制，关着朗读也要能出声
+    /// 不受「弹幕朗读」总开关限制（试听 / 礼物朗读）
     force: bool,
 }
 
 /// 启动朗读任务（应用启动时调用一次）：合成与播放各一个任务，之间用容量 1 的通道衔接
 pub fn spawn_worker(app: AppHandle) {
     let (play_tx, mut play_rx) = mpsc::channel::<AudioChunk>(PIPELINE_DEPTH);
+    // 礼物朗读的连击窗口定时器（常驻，见 `super::spawn_gift_timer`）
+    super::spawn_gift_timer(app.clone());
 
     // 播放任务：严格串行；代次过期的音频（已被更新弹幕顶掉 / 关了朗读）直接丢弃
     let player_app = app.clone();
@@ -41,7 +43,8 @@ pub fn spawn_worker(app: AppHandle) {
             let force = chunk.force;
             {
                 let state = player_app.state::<TtsState>();
-                if epoch != state.epoch.load(Ordering::Relaxed) {
+                // 礼物朗读与试听不参与打断作废（它们在队列里，被弹幕顶掉会白合成一条）
+                if !force && epoch != state.epoch.load(Ordering::Relaxed) {
                     continue;
                 }
                 state.playing.store(true, Ordering::Relaxed);
@@ -52,8 +55,8 @@ pub fn spawn_worker(app: AppHandle) {
             let _ = tokio::task::spawn_blocking(move || {
                 let expired =
                     || epoch != play_app.state::<TtsState>().epoch.load(Ordering::Relaxed);
-                // 只有「关掉朗读」才立刻停下；被打断的只是还没开播的音频
-                // （见 interrupt_if_backlogged），且试听不受总开关限制
+                // 只有「关掉弹幕朗读总开关」才立刻停下；被打断的只是还没开播的音频
+                // （见 interrupt_if_backlogged），且试听与礼物朗读不受总开关限制
                 let stop_now = || !force && !play_app.state::<TtsState>().is_enabled();
                 super::player::play_mp3(&data, expired, stop_now)
             })
@@ -74,7 +77,7 @@ pub fn spawn_worker(app: AppHandle) {
         loop {
             let item = app.state::<TtsState>().pop().await;
             let config = app.state::<TtsState>().config();
-            // 关闭期间积压的弹幕在重新开启后不再补读（试听例外）
+            // 关闭期间积压的弹幕在重新开启后不再补读（试听与礼物朗读除外）
             if !config.enabled && !item.force {
                 continue;
             }
@@ -89,9 +92,11 @@ pub fn spawn_worker(app: AppHandle) {
             match synth {
                 Ok(Ok(mp3)) => {
                     let state = app.state::<TtsState>();
-                    // 合成期间可能已被关掉或被打断，丢弃过期产物，别出声音
-                    let keep = (item.force || state.config().enabled)
-                        && state.epoch.load(Ordering::Relaxed) == epoch;
+                    // 弹幕在合成期间可能已被关掉或被打断，丢弃过期产物，别出声音；
+                    // 礼物朗读与试听（`force`）不参与打断：一旦入队就念完
+                    let keep = item.force
+                        || (state.config().enabled
+                            && state.epoch.load(Ordering::Relaxed) == epoch);
                     drop(state);
                     if keep
                         && play_tx
@@ -123,7 +128,13 @@ pub fn spawn_worker(app: AppHandle) {
             let shift = (consecutive_fail - FAIL_THRESHOLD).min(6);
             let backoff = (FAIL_BACKOFF_MIN * 2u32.pow(shift)).min(FAIL_BACKOFF_MAX);
             eprintln!("[tts] 连续失败 {consecutive_fail} 次，丢弃积压共暂停 {backoff:?} 后重试");
-            app.state::<TtsState>().queue.lock().unwrap().clear();
+            // 只丢待朗读的弹幕：试听与礼物朗读保留——大额打赏只来一次，
+            // 宁晚勿失（退避结束、服务端恢复后补念）
+            app.state::<TtsState>()
+                .queue
+                .lock()
+                .unwrap()
+                .retain(|item| item.force);
             tokio::time::sleep(backoff).await;
         }
     });

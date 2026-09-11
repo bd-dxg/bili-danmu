@@ -157,6 +157,23 @@ pub(crate) fn gift_set_config(
     config::save_gift_config(&app, &gift)
 }
 
+/// 读取礼物朗读配置
+#[tauri::command]
+pub(crate) fn gift_tts_get_config(state: State<'_, tts::TtsState>) -> config::GiftTtsConfig {
+    state.gift_config()
+}
+
+/// 更新礼物朗读配置：内存态实时生效并持久化（开关/门槛独立于弹幕朗读与礼物区）
+#[tauri::command]
+pub(crate) fn gift_tts_set_config(
+    app: AppHandle,
+    state: State<'_, tts::TtsState>,
+    gift_tts: config::GiftTtsConfig,
+) -> Result<(), String> {
+    state.set_gift_config(gift_tts.clone());
+    config::save_gift_tts_config(&app, &gift_tts)
+}
+
 /// 查询 Overlay 当前尺寸（逻辑像素，与 overlay_set_size 同一口径）
 #[tauri::command]
 pub(crate) fn overlay_get_size(app: AppHandle) -> Result<serde_json::Value, String> {

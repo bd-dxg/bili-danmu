@@ -95,6 +95,20 @@ export const DEFAULT_GIFT_CONFIG: GiftConfig = {
   combo_window_secs: 5,
 };
 
+/** 礼物朗读配置（Rust ↔ Vue） */
+export interface GiftTtsConfig {
+  /** 是否朗读打赏（独立于弹幕朗读开关与礼物区显示开关） */
+  enabled: boolean;
+  /** 朗读金额门槛（元）：0 = 全部付费打赏 */
+  min_amount_yuan: number;
+}
+
+/** 礼物朗读默认配置（与 config/types.rs 的 GiftTtsConfig::default 保持一致） */
+export const DEFAULT_GIFT_TTS_CONFIG: GiftTtsConfig = {
+  enabled: false,
+  min_amount_yuan: 0,
+};
+
 /** Overlay 弹幕样式（Rust ↔ Vue） */
 export interface OverlayStyle {
   font_size: number;
