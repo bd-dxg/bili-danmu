@@ -7,24 +7,13 @@ import SettingRow from "../components/SettingRow.vue";
 import { useSaveTip } from "../composables/useSaveTip";
 import {
   DEFAULT_DANMAKU_FILTER,
+  DEFAULT_OVERLAY_STYLE,
   type DanmakuFilter,
   type OverlayStyle,
 } from "../types/ipc";
 
-const style = ref<OverlayStyle>({
-  font_size: 17,
-  font_family: "Microsoft YaHei UI",
-  show_wealth: true,
-  show_medal: true,
-  show_role: true,
-  username_color: "#85DEF1",
-  content_color: "#FFFFFF",
-  bold: true,
-  outline: true,
-  outline_color: "#000000",
-  outline_width: 2,
-  row_gap: 0,
-});
+// 初值用共用默认值，挂载后从 Rust 拉真实配置
+const style = ref<OverlayStyle>({ ...DEFAULT_OVERLAY_STYLE });
 
 // 页内标签：style / color / window / filter
 const tab = ref<"style" | "color" | "window" | "filter">("style");
@@ -128,6 +117,20 @@ onMounted(async () => {
           </div>
         </SettingRow>
 
+        <SettingRow label="背景不透明度">
+          <div class="size-control">
+            <input
+              v-model.number="style.bg_opacity"
+              type="range"
+              min="0"
+              max="100"
+              step="5"
+              @change="apply()"
+            />
+            <span class="value">{{ style.bg_opacity }}%</span>
+          </div>
+        </SettingRow>
+
         <SettingRow label="字体">
           <select v-model="style.font_family" class="select" @change="apply()">
             <option v-for="f in FONT_CHOICES" :key="f.value" :value="f.value">
@@ -163,7 +166,10 @@ onMounted(async () => {
           />
         </SettingRow>
 
-        <p class="tip">弹幕文字统一白色（黑色描边），任意背景下清晰。</p>
+        <p class="tip">
+          弹幕文字统一白色（黑色描边），任意背景下清晰。
+          背景不透明度作用于弹幕区与礼物区整块面板：0% = 完全透明，100% = 纯黑。
+        </p>
         <p v-if="savedTip" class="saved">✓ 已应用并保存</p>
       </div>
     </section>

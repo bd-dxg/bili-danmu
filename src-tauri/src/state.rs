@@ -72,6 +72,8 @@ pub(crate) struct OverlayState {
     pub(crate) style: Mutex<config::OverlayStyle>,
     /// 弹幕过滤配置（内存态，供 Overlay 实时读取；变更广播 danmaku-filter 事件）
     pub(crate) filter: Mutex<config::DanmakuFilter>,
+    /// 礼物列表配置（内存态，供金额门槛与连击合并读取；变更广播 gift-config 事件）
+    pub(crate) gift: Mutex<config::GiftConfig>,
     /// 窗口当前位置大小（内存态，由 flush 周期/退出时落盘）
     pub(crate) bounds: Mutex<Option<config::WindowBounds>>,
     /// 已落盘的位置大小（去重，避免无变化时反复写盘）
@@ -85,6 +87,7 @@ impl Default for OverlayState {
             always_on_top: Mutex::new(true),
             style: Mutex::new(config::OverlayStyle::default()),
             filter: Mutex::new(config::DanmakuFilter::default()),
+            gift: Mutex::new(config::GiftConfig::default()),
             bounds: Mutex::new(None),
             saved_bounds: Mutex::new(None),
         }

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import SettingRow from "./SettingRow.vue";
 
 // 「弹幕窗」标签页：显示 / 鼠标穿透 / 始终置顶 / 宽高。
@@ -13,6 +14,8 @@ const winSize = ref({ width: 480, height: 240 });
 const ov = ref({ visible: false, clickthrough: true, alwaysOnTop: true });
 const errMsg = ref("");
 let errTimer: ReturnType<typeof setTimeout> | undefined;
+// 窗口被手动拖动边缘缩放时由 Rust 广播 overlay-size 同步过来
+let unlistenSize: UnlistenFn | undefined;
 
 /** 操作失败就地提示（3s 后自动消失），不打断页面其它区域的保存提示 */
 function fail(e: unknown) {
@@ -65,6 +68,13 @@ async function commitSize() {
 }
 
 onMounted(async () => {
+  // 先在监听：读取尺寸与手动缩放都走同一条路，不必区分先后
+  unlistenSize = await listen<{ width: number; height: number }>(
+    "overlay-size",
+    (e) => {
+      winSize.value = e.payload;
+    },
+  );
   try {
     winSize.value = await invoke<{ width: number; height: number }>("overlay_get_size");
   } catch (e) {
@@ -79,6 +89,7 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
+  unlistenSize?.();
   if (errTimer) clearTimeout(errTimer);
 });
 </script>

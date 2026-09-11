@@ -132,12 +132,18 @@ fn handle_frame(app: &tauri::AppHandle, room_id: u32, data: &[u8]) -> Result<(),
             OP_MESSAGE => {
                 for body in parser::expand_packet(&p)? {
                     for ev in parser::parse_payload(&body)? {
-                        // 单变体：所有事件都是弹幕
-                        let BilibiliEvent::Danmaku(d) = ev;
-                        // 朗读是与显示并列的独立消费者（关闭朗读不影响弹幕窗）
-                        crate::state::record_danmaku(app);
-                        crate::tts::on_danmaku(app, &d);
-                        let _ = app.emit("danmaku", d);
+                        match ev {
+                            BilibiliEvent::Danmaku(d) => {
+                                // 朗读是与显示并列的独立消费者（关闭朗读不影响弹幕窗）
+                                crate::state::record_danmaku(app);
+                                crate::tts::on_danmaku(app, &d);
+                                let _ = app.emit("danmaku", d);
+                            }
+                            // 打赏：礼物列表的独立消费者（门槛与连击合并见 gift 模块）
+                            BilibiliEvent::Backing(b) => {
+                                crate::gift::on_backing(app, b);
+                            }
+                        }
                     }
                 }
             }

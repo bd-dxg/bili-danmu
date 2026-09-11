@@ -4,6 +4,7 @@
 
 use crate::bilibili;
 use crate::config;
+use crate::gift;
 use crate::state::{clear_danmaku_ticks, AppState, RoomStatus};
 use serde_json::json;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -39,6 +40,7 @@ pub(crate) async fn connect_room(
 pub(crate) fn disconnect_room(app: AppHandle, state: State<'_, AppState>) {
     *state.status.lock().unwrap() = RoomStatus::Disconnected;
     clear_danmaku_ticks(&app);
+    gift::clear(&app);
     if let Some(token) = state.cancel.lock().unwrap().take() {
         token.cancel();
     }
@@ -186,6 +188,7 @@ fn finish_connection(app: &AppHandle, cancel: &CancellationToken, result: Result
     }
     *st.status.lock().unwrap() = RoomStatus::Disconnected;
     clear_danmaku_ticks(app);
+    gift::clear(app);
     match result {
         Ok(()) => {
             let _ = app.emit("room-status", json!({ "state": "disconnected" }));
