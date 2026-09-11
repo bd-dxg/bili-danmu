@@ -3,11 +3,15 @@
 //! 全文只有纯字符串处理，不碰队列与网络，便于单测覆盖边界。
 //! 筛选语义与前端 Overlay 的显示筛选一致（见 `matches_filter` 注释）。
 
-use crate::bilibili::event::Danmaku;
+use crate::bilibili::event::{Backing, BackingKind, Danmaku};
 use crate::config::{DanmakuFilter, TtsConfig};
 
 /// 同一字符连续重复的最大保留次数（「哈哈哈哈哈哈哈」只读三个）
 const MAX_REPEAT: u32 = 3;
+
+/// 醒目留言正文的朗读上限（字）：SC 正文最长 200 字（≈ 40s 音频），
+/// 不截断的话一条留言会把后面所有弹幕与打赏的朗读一起堵住
+const MAX_SUPER_CHAT_LEN: usize = 50;
 
 /// 朗读筛选判定：与前端 Overlay 的显示筛选同语义
 /// （身份规则之间是「或」，全部关闭 = 不过滤；敏感词屏蔽独立叠加且不豁免）
@@ -76,6 +80,68 @@ pub(super) fn build_text(d: &Danmaku, config: &TtsConfig) -> String {
 /// 汉字与数字在 Unicode 里属于字母/数字，「哈哈哈」「666」都算有内容。
 fn has_readable_content(text: &str) -> bool {
     text.chars().any(|ch| ch.is_alphanumeric())
+}
+
+/// 组装打赏朗读文案：感谢 + 用户名 + 数量 + 礼物名
+///
+/// 三种形态各一套句式：礼物「感谢老板A送的5个辣条」、醒目留言「感谢老板A的醒目留言：主播加油」、
+/// 上舰「感谢老板A上舰舰长」。礼物名或用户名清洗后为空时降级到不带它的句式，
+/// 不出现「感谢送的个」这种断句。
+pub(super) fn build_backing_text(b: &Backing) -> String {
+    let name = spoken_name(&b.username);
+    match b.kind {
+        BackingKind::SuperChat => {
+            let message = b
+                .message
+                .as_deref()
+                .map(clean_for_speech)
+                .map(|m| truncate_chars(&m, MAX_SUPER_CHAT_LEN))
+                .unwrap_or_default();
+            if message.is_empty() {
+                format!("感谢{name}的醒目留言")
+            } else {
+                format!("感谢{name}的醒目留言：{message}")
+            }
+        }
+        BackingKind::Guard => {
+            let tier = clean_for_speech(&b.gift_name);
+            if tier.is_empty() {
+                format!("感谢{name}上舰")
+            } else {
+                format!("感谢{name}上舰{tier}")
+            }
+        }
+        // 连击信号不会走到这里（聚合器已忽略），余下的都是普通礼物
+        _ => {
+            let gift = clean_for_speech(&b.gift_name);
+            let num = b.num.max(1);
+            if gift.is_empty() {
+                format!("感谢{name}送的{num}个礼物")
+            } else {
+                format!("感谢{name}送的{num}个{gift}")
+            }
+        }
+    }
+}
+
+/// 朗读用的用户名：昵称里的 `_` 同样会被念成「下划线」，先剔噪声；
+/// 剔完为空（纯符号昵称）时回退「观众」，不能让句子缺主语
+fn spoken_name(username: &str) -> String {
+    let name = strip_noise(username);
+    let name = name.trim();
+    if has_readable_content(name) {
+        name.to_string()
+    } else {
+        "观众".into()
+    }
+}
+
+/// 按字符数截断（不是字节数，中文一个字三字节）
+fn truncate_chars(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_string();
+    }
+    text.chars().take(max).collect()
 }
 
 /// 朗读前清洗（prd.md §24）：丢掉噪声字符与链接、折叠连续重复字符、规整空白
@@ -338,6 +404,71 @@ mod tests {
         d.guard_level = Some(3);
         // 筛选在组装文案之前：命中敏感词就整条丢掉，不会念出「舰长 小明说」
         assert!(!matches_filter(&d, &config.filter));
+    }
+
+    fn backing(kind: BackingKind, username: &str, gift_name: &str, num: u32) -> Backing {
+        Backing {
+            id: "1".into(),
+            kind,
+            uid: 1,
+            username: username.into(),
+            gift_name: gift_name.into(),
+            gift_id: 100,
+            num,
+            amount_fen: 100,
+            timestamp: 0,
+            message: None,
+            medal_level: None,
+            medal_name: None,
+            medal_room_id: None,
+            guard_level: None,
+            wealth_level: None,
+        }
+    }
+
+    #[test]
+    fn gift_text_reads_username_and_count() {
+        let five = backing(BackingKind::Gift, "老板A", "辣条", 5);
+        assert_eq!(build_backing_text(&five), "感谢老板A送的5个辣条");
+        let one = backing(BackingKind::Gift, "老板A", "辣条", 1);
+        assert_eq!(build_backing_text(&one), "感谢老板A送的1个辣条");
+    }
+
+    #[test]
+    fn super_chat_text_speaks_message() {
+        let mut b = backing(BackingKind::SuperChat, "老板A", "醒目留言", 1);
+        b.message = Some("主播加油😄".into());
+        assert_eq!(build_backing_text(&b), "感谢老板A的醒目留言：主播加油");
+        // 留言缺失/清洗后为空时不能出现「的醒目留言：」这种空尾巴
+        b.message = None;
+        assert_eq!(build_backing_text(&b), "感谢老板A的醒目留言");
+        b.message = Some("😄🎉".into());
+        assert_eq!(build_backing_text(&b), "感谢老板A的醒目留言");
+    }
+
+    #[test]
+    fn long_super_chat_message_is_truncated() {
+        let mut b = backing(BackingKind::SuperChat, "老板A", "醒目留言", 1);
+        b.message = Some("主播加油".repeat(20));
+        let text = build_backing_text(&b);
+        let body = text.split('：').nth(1).expect("应保留留言正文");
+        assert_eq!(body.chars().count(), MAX_SUPER_CHAT_LEN);
+    }
+
+    #[test]
+    fn guard_text_names_the_tier() {
+        let b = backing(BackingKind::Guard, "老板A", "舰长", 1);
+        assert_eq!(build_backing_text(&b), "感谢老板A上舰舰长");
+    }
+
+    #[test]
+    fn unreadable_name_or_gift_falls_back() {
+        // 纯符号昵称 → 回退「观众」
+        let noise_name = backing(BackingKind::Gift, "_＿_", "辣条", 3);
+        assert_eq!(build_backing_text(&noise_name), "感谢观众送的3个辣条");
+        // 礼物名清洗后为空 → 不出现「送的3个」空尾巴
+        let noise_gift = backing(BackingKind::Gift, "老板A", "***", 3);
+        assert_eq!(build_backing_text(&noise_gift), "感谢老板A送的3个礼物");
     }
 
     #[test]

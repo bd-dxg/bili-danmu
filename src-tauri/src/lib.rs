@@ -55,6 +55,11 @@ pub fn run() {
             // TTS：恢复朗读配置并启动串行朗读 worker（与弹幕显示完全解耦）
             app.state::<tts::TtsState>()
                 .set_config(cfg.tts.clone());
+            app.state::<tts::TtsState>()
+                .set_gift_config(cfg.gift_tts.clone());
+            if cfg.gift_tts.enabled {
+                eprintln!("[tts] 已恢复礼物朗读开关，门槛={} 元", cfg.gift_tts.min_amount_yuan);
+            }
             if cfg.tts.enabled {
                 eprintln!("[tts] 已恢复朗读开关，音色={}", cfg.tts.voice);
             }
@@ -219,6 +224,8 @@ pub fn run() {
             commands::danmaku_set_filter,
             commands::gift_get_config,
             commands::gift_set_config,
+            commands::gift_tts_get_config,
+            commands::gift_tts_set_config,
             commands::tts_get_config,
             commands::tts_set_config,
             commands::tts_test_speak,

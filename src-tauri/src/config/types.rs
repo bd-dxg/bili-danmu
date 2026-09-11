@@ -185,6 +185,30 @@ impl Default for GiftConfig {
     }
 }
 
+/// 礼物朗读配置
+///
+/// 与礼物列表（`GiftConfig`）各自独立：礼物区可以只显示大额、朗读门槛更低，
+/// 也可以关掉礼物区只朗读；连击合并窗口沿用 `GiftConfig::combo_window_secs`
+/// （同一个直播间里「连击」应该是同一个口径，不再单独配一份）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GiftTtsConfig {
+    /// 是否朗读打赏（独立于弹幕朗读总开关与礼物区显示开关）
+    pub enabled: bool,
+    /// 朗读金额门槛（元）：低于此价值的打赏不朗读（0 = 全部付费打赏）
+    pub min_amount_yuan: f64,
+}
+
+impl Default for GiftTtsConfig {
+    fn default() -> Self {
+        Self {
+            // 新增功能默认静默：升级后不会突然出声，由主播主动开启
+            enabled: false,
+            min_amount_yuan: 0.0,
+        }
+    }
+}
+
 /// 最近连接过的直播间（主界面输入框下方面包屑，点击直连）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecentRoom {
@@ -208,5 +232,6 @@ pub struct ConfigFile {
     pub danmaku_filter: DanmakuFilter,
     pub tts: TtsConfig,
     pub gift: GiftConfig,
+    pub gift_tts: GiftTtsConfig,
     pub recent_rooms: Vec<RecentRoom>,
 }

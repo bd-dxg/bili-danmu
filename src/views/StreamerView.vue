@@ -3,13 +3,15 @@ import { onMounted, ref } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import SettingRow from "../components/SettingRow.vue";
 import { useSaveTip } from "../composables/useSaveTip";
-import { DEFAULT_GIFT_CONFIG, type GiftConfig } from "../types/ipc";
+import { DEFAULT_GIFT_CONFIG, DEFAULT_GIFT_TTS_CONFIG, type GiftConfig, type GiftTtsConfig } from "../types/ipc";
 
 // 页内标签：gift / giftTts / welcome
 const tab = ref<"gift" | "giftTts" | "welcome">("gift");
 
 // 礼物列表配置：金额门槛与连击合并都在 Rust 侧判定，这里只负责读写与展示
 const gift = ref<GiftConfig>({ ...DEFAULT_GIFT_CONFIG });
+// 礼物朗读配置：开关与门槛独立于弹幕朗读与礼物区显示
+const giftTts = ref<GiftTtsConfig>({ ...DEFAULT_GIFT_TTS_CONFIG });
 
 const { savedTip, opError, showSaved, showError } = useSaveTip();
 
@@ -25,11 +27,24 @@ async function apply() {
   }
 }
 
+async function applyGiftTts() {
+  // 同礼物区：数字输入框可能被清空或填成负数，统一收敛到 0 再下发（0 = 不限）
+  const amount = Number(giftTts.value.min_amount_yuan);
+  giftTts.value.min_amount_yuan = Number.isFinite(amount) && amount > 0 ? amount : 0;
+  try {
+    await invoke("gift_tts_set_config", { giftTts: { ...giftTts.value } });
+    showSaved();
+  } catch (e) {
+    showError(e);
+  }
+}
+
 onMounted(async () => {
   try {
     gift.value = await invoke<GiftConfig>("gift_get_config");
+    giftTts.value = await invoke<GiftTtsConfig>("gift_tts_get_config");
   } catch (e) {
-    console.error("读取礼物列表配置失败", e);
+    console.error("读取礼物配置失败", e);
   }
 });
 </script>
@@ -118,10 +133,37 @@ onMounted(async () => {
 
     <section v-show="tab === 'giftTts'" class="tab-pane">
       <div class="setting-card">
+        <SettingRow label="朗读打赏（礼物 / 醒目留言 / 上舰）">
+          <input
+            v-model="giftTts.enabled"
+            type="checkbox"
+            class="switch"
+            @change="applyGiftTts()"
+          />
+        </SettingRow>
+
+        <SettingRow label="朗读金额门槛">
+          <div class="num-control">
+            <input
+              v-model.number="giftTts.min_amount_yuan"
+              type="number"
+              min="0"
+              step="1"
+              class="num"
+              @change="applyGiftTts()"
+            />
+            <span class="unit">元（0 = 不限）</span>
+          </div>
+        </SettingRow>
+
         <p class="tip">
-          礼物 / 醒目留言 / 上舰的朗读开关与文案规则（礼物名、数量、用户名、金额档位过滤）。
-          功能未实现。
+          打赏朗读会插队：排到所有待朗读弹幕之前（正在念的那条念完再接，不掐断半句）。
+          文案为「感谢老板A送的5个辣条」，醒目留言念留言正文，上舰念「感谢老板A上舰舰长」。
+          连击按「礼物渲染」标签里的连击合并窗口聚合，窗口结束后只念一次汇总；
+          门槛按累加后的总额判定，设 30 元时连送 30 个 1 元礼物会攒够才念。
+          开关独立于弹幕朗读：关掉「朗读 → 开启弹幕朗读」后，打赏照念。
         </p>
+        <p v-if="savedTip" class="saved">✓ 已应用并保存</p>
       </div>
     </section>
 
