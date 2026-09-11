@@ -139,12 +139,35 @@ pub(crate) fn danmaku_set_filter(
     config::save_danmaku_filter(&app, &filter)
 }
 
-/// 查询 Overlay 当前尺寸（逻辑像素）
+/// 读取当前礼物列表配置
+#[tauri::command]
+pub(crate) fn gift_get_config(state: State<'_, OverlayState>) -> config::GiftConfig {
+    state.gift.lock().unwrap().clone()
+}
+
+/// 更新礼物列表配置：持久化（门槛与连击合并由 Rust 侧判定，广播供设置页回显）
+#[tauri::command]
+pub(crate) fn gift_set_config(
+    app: AppHandle,
+    state: State<'_, OverlayState>,
+    gift: config::GiftConfig,
+) -> Result<(), String> {
+    *state.gift.lock().unwrap() = gift.clone();
+    let _ = app.emit("gift-config", &gift);
+    config::save_gift_config(&app, &gift)
+}
+
+/// 查询 Overlay 当前尺寸（逻辑像素，与 overlay_set_size 同一口径）
 #[tauri::command]
 pub(crate) fn overlay_get_size(app: AppHandle) -> Result<serde_json::Value, String> {
     let win = overlay_window(&app).ok_or("Overlay 窗口未创建")?;
-    let size = win.inner_size().map_err(|e| format!("读取尺寸失败: {e}"))?;
-    Ok(json!({ "width": size.width, "height": size.height }))
+    let scale = win.scale_factor().map_err(|e| format!("读取缩放失败: {e}"))?;
+    // inner_size 是物理像素，高 DPI 下得先换算，否则滑块显示的数会比实际小
+    let size = win
+        .inner_size()
+        .map_err(|e| format!("读取尺寸失败: {e}"))?
+        .to_logical::<f64>(scale);
+    Ok(json!({ "width": size.width.round(), "height": size.height.round() }))
 }
 
 /// 调整 Overlay 宽高（设置页滑块调用；尺寸变化自动被窗口事件捕获落盘）

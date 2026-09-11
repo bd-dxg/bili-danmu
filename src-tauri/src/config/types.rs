@@ -45,6 +45,8 @@ pub struct OverlayStyle {
     pub outline_width: f64,
     /// 弹幕行间距（px，0=不额外加，仅行高）
     pub row_gap: f64,
+    /// 弹幕区 / 礼物区的背景不透明度（0-100，0 = 完全透明，100 = 纯黑）
+    pub bg_opacity: f64,
 }
 
 impl Default for OverlayStyle {
@@ -62,6 +64,7 @@ impl Default for OverlayStyle {
             outline_color: "#000000".into(),
             outline_width: 2.0,
             row_gap: 0.0,
+            bg_opacity: 35.0,
         }
     }
 }
@@ -155,6 +158,33 @@ impl Default for TtsConfig {
     }
 }
 
+/// 礼物列表配置
+///
+/// 门槛以人民币元配置（金瓜子 1000 = 1 元），连击按累加后的总额判定。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GiftConfig {
+    /// 是否在弹幕窗展示礼物区
+    pub enabled: bool,
+    /// 打赏金额门槛（元）：低于此价值的打赏不进礼物列表（0 = 全部付费打赏）
+    pub min_amount_yuan: f64,
+    /// 礼物区最多同时显示的条数
+    pub max_rows: u32,
+    /// 连击合并窗口（秒）：同一观众同一种礼物在该时间内的多次送出合并为一行
+    pub combo_window_secs: u64,
+}
+
+impl Default for GiftConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            min_amount_yuan: 0.0,
+            max_rows: 5,
+            combo_window_secs: 5,
+        }
+    }
+}
+
 /// 最近连接过的直播间（主界面输入框下方面包屑，点击直连）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecentRoom {
@@ -177,5 +207,6 @@ pub struct ConfigFile {
     pub overlay_bounds: Option<WindowBounds>,
     pub danmaku_filter: DanmakuFilter,
     pub tts: TtsConfig,
+    pub gift: GiftConfig,
     pub recent_rooms: Vec<RecentRoom>,
 }

@@ -41,6 +41,60 @@ export interface DisplayDanmaku extends DanmakuEvent {
   isRoomMedal: boolean;
 }
 
+/**
+ * 礼物列表的一行（Rust → Vue，事件名 gift）
+ *
+ * 同一连击分组的更新会复用同一个 id 重复下发，前端按 id 覆盖而不新增行。
+ */
+export interface BackingEvent {
+  id: string;
+  kind: "gift" | "combo" | "super_chat" | "guard";
+  uid: number;
+  username: string;
+  /** 礼物名 / 上舰档位名 / 醒目留言固定为「醒目留言」 */
+  gift_name: string;
+  gift_id: number;
+  num: number;
+  /** 人民币价值（分），1 元 = 100 分 */
+  amount_fen: number;
+  /** Unix 秒 */
+  timestamp: number;
+  /** 醒目留言正文 */
+  message?: string;
+  // ---- 用户身份（供礼物行复用弹幕的徽章区） ----
+  medal_level?: number;
+  medal_name?: string;
+  medal_room_id?: number;
+  guard_level?: number;
+  wealth_level?: number;
+}
+
+/** Overlay 礼物行数据：打赏事件 + 展示所需的派生标记 */
+export interface DisplayBacking extends BackingEvent {
+  /** 粉丝牌来自当前房间（决定本房牌绿 / 其它房牌灰的配色） */
+  isRoomMedal: boolean;
+}
+
+/** 礼物列表配置（Rust ↔ Vue，事件名 gift-config） */
+export interface GiftConfig {
+  /** 是否在弹幕窗展示礼物区 */
+  enabled: boolean;
+  /** 打赏金额门槛（元）：0 = 全部付费打赏 */
+  min_amount_yuan: number;
+  /** 礼物区最多同时显示的条数 */
+  max_rows: number;
+  /** 连击合并窗口（秒） */
+  combo_window_secs: number;
+}
+
+/** 礼物列表默认配置（与 config/types.rs 的 GiftConfig::default 保持一致） */
+export const DEFAULT_GIFT_CONFIG: GiftConfig = {
+  enabled: true,
+  min_amount_yuan: 0,
+  max_rows: 5,
+  combo_window_secs: 5,
+};
+
 /** Overlay 弹幕样式（Rust ↔ Vue） */
 export interface OverlayStyle {
   font_size: number;
@@ -56,7 +110,26 @@ export interface OverlayStyle {
   outline_width: number;
   /** 弹幕行间距 px（0=不额外加，仅行高） */
   row_gap: number;
+  /** 弹幕区 / 礼物区的背景不透明度（0-100，0 = 完全透明，100 = 纯黑） */
+  bg_opacity: number;
 }
+
+/** Overlay 弹幕样式默认值（与 config/types.rs 的 OverlayStyle::default 保持一致） */
+export const DEFAULT_OVERLAY_STYLE: OverlayStyle = {
+  font_size: 17,
+  font_family: "Microsoft YaHei UI",
+  show_wealth: true,
+  show_medal: true,
+  show_role: true,
+  username_color: "#85DEF1",
+  content_color: "#FFFFFF",
+  bold: true,
+  outline: true,
+  outline_color: "#000000",
+  outline_width: 2,
+  row_gap: 0,
+  bg_opacity: 35,
+};
 
 /** connect_room 返回值 */
 export type ConnectResult = { ok: true } | { ok: false; message: string };

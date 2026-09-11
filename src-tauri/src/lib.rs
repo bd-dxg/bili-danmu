@@ -11,6 +11,7 @@ mod bilibili;
 mod commands;
 mod config;
 mod connection;
+mod gift;
 mod state;
 mod tts;
 mod window;
@@ -34,6 +35,7 @@ pub fn run() {
         })
         .manage(OverlayState::default())
         .manage(tts::TtsState::new(config::TtsConfig::default()))
+        .manage(gift::GiftState::default())
         .setup(|app| {
             // 加载持久化配置：登录态 → AppState.auth；样式/位置 → OverlayState
             let cfg = config::load_config(app.handle());
@@ -48,6 +50,7 @@ pub fn run() {
                 let ov = app.state::<OverlayState>();
                 *ov.style.lock().unwrap() = cfg.overlay_style.clone();
                 *ov.filter.lock().unwrap() = cfg.danmaku_filter.clone();
+                *ov.gift.lock().unwrap() = cfg.gift.clone();
             }
             // TTS：恢复朗读配置并启动串行朗读 worker（与弹幕显示完全解耦）
             app.state::<tts::TtsState>()
@@ -214,6 +217,8 @@ pub fn run() {
             commands::overlay_set_style,
             commands::danmaku_get_filter,
             commands::danmaku_set_filter,
+            commands::gift_get_config,
+            commands::gift_set_config,
             commands::tts_get_config,
             commands::tts_set_config,
             commands::tts_test_speak,

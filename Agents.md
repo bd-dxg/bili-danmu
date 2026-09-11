@@ -4,15 +4,17 @@
 
 轻量级 B 站直播弹幕桌面助手（Windows）：连接 B 站直播间 → 获取实时弹幕 → 在桌面透明悬浮层（Overlay）显示 + 可选 Edge TTS 朗读，供 OBS 推流主播看/听弹幕。Tauri 2 多窗口架构：主窗口（配置）+ 透明悬浮窗（Overlay）+ 发送弹幕框（Sender，始终吸附 Overlay 下方）。
 
-## 下一阶段方向：礼物系统（未开工）
+## 礼物系统（显示已完成，朗读与欢迎未开工）
 
-礼物 / SC / 上舰的**弹幕窗渲染 + 朗读**。当前 `parser.rs` 的 `parse_payload` 只认 `DANMU_MSG`，其余命令直接丢弃，所以要先扩解析与事件模型。
+打赏（礼物 / SC / 上舰）的**弹幕窗渲染**已上线：解析 → 金额门槛 + 连击合并（`src-tauri/src/gift.rs`）→ 弹幕窗内独立礼物区（弹幕列表上方）。
 
-- 解析：`SEND_GIFT`、`COMBO_SEND`（连击）、`SUPER_CHAT_MESSAGE`（SC）、`GUARD_BUY`（上舰）
-- 事件模型：`BilibiliEvent` 目前只有 `Danmaku` 一个变体，`ws.rs` 里是按单变体解构的（`let BilibiliEvent::Danmaku(d) = ev`），加变体时必须一并改
-- 渲染：礼物行与普通弹幕区分视觉，沿用现有徽章列对齐（`DanmakuRow` + `DisplayDanmaku`）
-- 朗读：接现有 Edge TTS 队列（`tts::on_danmaku` 旁再开一个入口），文案含礼物名 / 数量 / 用户名
-- 风险：高频小礼物（连击、免费礼物）必须节流或过滤，否则会淹掉弹幕朗读（朗读是串行队列，音频时长 ~0.21s/字）
+- 解析：`parser.rs` 把 `SEND_GIFT` / `COMBO_SEND` / `SUPER_CHAT_MESSAGE` / `GUARD_BUY` 解成 `BilibiliEvent::Backing`；金额统一折算成整数「分」（`amount_fen`，金瓜子 1000 = 1 元），免费礼物（银瓜子 / 零价）直接返回 None
+- `COMBO_SEND` **只当连击仍在继续的信号**（延长合并窗口），数量与金额一律以 `SEND_GIFT` 为准——两路事件同时下发，两边都计就重复；它是否带价格字段未实测（用 `scripts/ws-probe.ps1` 验证）
+- 门槛与连击合并都在 Rust（`gift::on_backing`）：门槛按**累加后的总额**判定，未过门槛的连击先攒在分组里；同人同礼物在 `combo_window_secs` 内合并成一行，行 id = 分组键 + 首次时间戳，前端按 id **覆盖**更新（位置不变）
+- 渲染：`GiftRow.vue` + `MetaBadges.vue`。徽章列抽成 `MetaBadges` 是**故意共用**的——`role-slot` 宽度与发送框缩进（`window.rs` `sender_layout_metrics`）同源，复制一份 CSS 后改单侧就会错位；`row-style.ts` 同理（两行共用描边计算）
+- 设置项在「主播分区 → 礼物渲染」标签：开关 / 金额门槛 / 条数上限 / 合并窗口
+- 未做：礼物图标（渲染层已留扩展位）、**礼物朗读**（接现有 Edge TTS 队列，`tts::on_danmaku` 旁再开入口，文案含礼物名 / 数量 / 用户名）、**欢迎信息**（进房观众 / 上舰 / 关注点赞）
+- 待验证：`rnd` 去重未做——重连后服务端若重推同一条 `SEND_GIFT`，窗口内会重复累加，数量与金额翻倍
 
 ## 技术栈
 
@@ -40,13 +42,14 @@
     - `views/` 页面（RoomView 房间、DanmakuView 弹幕、TtsView 朗读、AboutView 关于，后三者均为页内标签式）
     - `components/` 复用组件（`LoginDialog.vue` 登录二维码弹窗、`DanmakuFilterPanel.vue` 弹幕筛选表单（显示/朗读共用）、`StatusDashboard.vue` 运行状态仪表盘、`SettingRow.vue` 设置行、`OverlayWindowPanel.vue` 弹幕窗标签页）
     - `composables/` 逻辑（`useLogin` 登录态、`useRoomConnection` 连接与最近房间、`useTtsConfig` 朗读配置与音色列表与校验、`useSaveTip` 设置页提示）
-    - `overlay/OverlayApp.vue` + `overlay/DanmakuRow.vue` 悬浮层入口与单行渲染、`sender/SenderApp.vue` 发送弹幕框入口
+    - `overlay/OverlayApp.vue` + `overlay/DanmakuRow.vue` 悬浮层入口与单行渲染、`overlay/GiftRow.vue` 礼物行、`overlay/MetaBadges.vue` 两区共用的身份徽章列、`overlay/row-style.ts` 共用的描边计算、`sender/SenderApp.vue` 发送弹幕框入口
     - `styles/settings.css` 全局设置页样式（约束见「注意事项」）、`types/ipc.ts` IPC 类型定义、`overlay.ts` / `sender.ts` 独立入口（对应 `overlay.html` / `sender.html`）
   - `src-tauri/src/` Rust 核心：
     - `lib.rs` 组装（状态托管、窗口创建、托盘、命令注册）、`state.rs` 内存状态、`commands.rs` IPC 命令、`connection.rs` 连接与断线重连、`window.rs` 窗口辅助与发送框吸附
     - `bilibili/`：`protocol.rs` 协议包、`parser.rs` 解压/解析、`api.rs` HTTP 接口（房间解析、弹幕配置、主播名）、`ws.rs` WebSocket 会话、`wbi.rs` 签名、`login.rs` 扫码登录、`send.rs` 发送弹幕、`event.rs` 事件
     - `tts/`：`mod.rs` 队列状态与入口钩子、`text.rs` 筛选/清洗/组装文案、`worker.rs` 合成与播放流水线、`player.rs` winmm MCI 播放、`edge.rs` Edge TTS 协议、`edge/voices.rs` 音色表、`edge/ssml.rs` SSML 构造、`edge/util.rs` 时间与编码工具
     - `config.rs` 配置读写与全局互斥、`config/types.rs` 结构体与默认值、`config/crypto.rs` DPAPI 加解密
+    - `gift.rs` 礼物列表：金额门槛与连击合并（唯一判定处，前端只负责按 id 覆盖与条数上限）
 - 多窗口：根目录 `index.html`（主窗口）+ `overlay.html`（透明悬浮窗）+ `sender.html`（发送弹幕框），Tauri 配置见 `src-tauri/tauri.conf.json` 与 `capabilities/default.json`
 - IPC 双向类型约定：Rust command 与 `src/types/ipc.ts` 保持一致，改动协议时两端同步
 - 注释、commit 一律简体中文；PRD（`prd.md`）已停止维护（见下）
