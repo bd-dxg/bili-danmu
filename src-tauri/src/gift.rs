@@ -177,9 +177,6 @@ mod tests {
             amount_fen,
             timestamp: ts,
             message: None,
-            medal_level: None,
-            medal_name: None,
-            medal_room_id: None,
             guard_level: None,
             wealth_level: None,
         }

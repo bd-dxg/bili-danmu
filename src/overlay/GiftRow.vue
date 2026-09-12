@@ -2,12 +2,12 @@
 import MetaBadges from './MetaBadges.vue'
 import { rowShadow } from './row-style'
 
-import type { DisplayBacking, OverlayStyle } from '../types/ipc'
+import type { BackingEvent, OverlayStyle } from '../types/ipc'
 
-// 单条礼物行：徽章区（与弹幕行共用）+ 正文区（用户名 / 送出 / 礼物名 / 数量 / 金额）。
+// 单条礼物行：徽章区（与弹幕行共用，只渲染身份前缀与荣耀等级）+ 正文区（用户名 / 送出 / 礼物名 / 数量 / 金额）。
 // 字体与描边跟随弹幕样式，礼物名与金额用金色与弹幕正文区分。
 defineProps<{
-  b: DisplayBacking
+  b: BackingEvent
   overlayStyle: OverlayStyle
 }>()
 
@@ -23,9 +23,6 @@ function money(fen: number): string {
     <MetaBadges
       :is-admin="false"
       :guard-level="b.guard_level"
-      :medal-name="b.medal_name"
-      :medal-level="b.medal_level"
-      :is-room-medal="b.isRoomMedal"
       :wealth-level="b.wealth_level"
       :overlay-style="overlayStyle" />
     <span class="msg">

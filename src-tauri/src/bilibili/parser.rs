@@ -206,7 +206,6 @@ fn parse_danmaku(v: &serde_json::Value) -> Option<Danmaku> {
 /// total_coin = 实付总价（金瓜子）= 折后单价 x num，优先用它算金额
 /// coin_type  = 'gold' 付费 / 'silver' 免费
 /// rnd        = 服务端去重随机数（时间戳+去重 ID 或 UUID）
-/// medal_info = { medal_level, medal_name, medal_room_id / anchor_roomid }
 /// ```
 fn parse_gift(v: &serde_json::Value) -> Option<Backing> {
     let data = v.get("data")?;
@@ -229,7 +228,6 @@ fn parse_gift(v: &serde_json::Value) -> Option<Backing> {
     };
     let timestamp = normalize_timestamp(get_i64(data, "timestamp").unwrap_or(0));
     let rnd = get_str(data, "rnd").unwrap_or_default();
-    let (medal_level, medal_name, medal_room_id) = parse_medal(data.get("medal_info"));
 
     Some(Backing {
         id: if rnd.is_empty() {
@@ -246,9 +244,6 @@ fn parse_gift(v: &serde_json::Value) -> Option<Backing> {
         amount_fen: coin_to_fen(coin),
         timestamp,
         message: None,
-        medal_level,
-        medal_name,
-        medal_room_id,
         guard_level: get_u32(data, "guard_level"),
         wealth_level: get_u32(data, "wealth_level"),
     })
@@ -257,7 +252,7 @@ fn parse_gift(v: &serde_json::Value) -> Option<Backing> {
 /// 解析 SEND_GIFT_V2（新版礼物广播）→ 若干 Backing
 ///
 /// 载荷是 base64 编码的 protobuf（字段号见 `protobuf` 模块文档），
-/// 一条消息可携带多个礼物档位；用户字段（uid / uname / 舰队 / 勋章）在顶层，
+/// 一条消息可携带多个礼物档位；用户字段（uid / uname / 舰队）在顶层，
 /// 每个礼物档位自己带 gift_id / 数量 / 价格。
 /// 免费礼物（银瓜子 / 零价）与 SEND_GIFT 同一口径，直接丢弃。
 fn parse_gift_v2(v: &serde_json::Value) -> Vec<Backing> {
@@ -276,16 +271,6 @@ fn parse_gift_v2(v: &serde_json::Value) -> Vec<Backing> {
     let uid = protobuf::int(&top, 1).unwrap_or(0) as i64;
     let username = protobuf::string(&top, 2).unwrap_or_default();
     let guard_level = protobuf::int(&top, 5).map(|g| g as u32);
-    // 勋章：嵌套消息（anchor_roomid / medal_level / medal_name）
-    let medal = protobuf::bytes(&top, 8).and_then(|b| protobuf::decode(b).ok());
-    let (medal_level, medal_name, medal_room_id) = match medal {
-        Some(m) => (
-            protobuf::int(&m, 5).map(|l| l as u32).filter(|l| *l > 0),
-            protobuf::string(&m, 6),
-            protobuf::int(&m, 4).map(|r| r as u32),
-        ),
-        None => (None, None, None),
-    };
 
     let mut out = Vec::new();
     for item in protobuf::bytes_all(&top, 10) {
@@ -324,9 +309,6 @@ fn parse_gift_v2(v: &serde_json::Value) -> Vec<Backing> {
             amount_fen: coin_to_fen(coin),
             timestamp,
             message: None,
-            medal_level,
-            medal_name: medal_name.clone(),
-            medal_room_id,
             guard_level,
             // 新版广播里没有荣耀等级，礼物行的 LV 徽章会缺一档
             wealth_level: None,
@@ -361,7 +343,6 @@ fn parse_combo(v: &serde_json::Value) -> Option<Backing> {
         .or_else(|| get_i64(data, "giftId"))
         .unwrap_or(0);
     let timestamp = normalize_timestamp(get_i64(data, "timestamp").unwrap_or(0));
-    let (medal_level, medal_name, medal_room_id) = parse_medal(data.get("medal_info"));
 
     Some(Backing {
         id: format!("combo-{timestamp}-{uid}-{gift_id}"),
@@ -378,9 +359,6 @@ fn parse_combo(v: &serde_json::Value) -> Option<Backing> {
         amount_fen: 0,
         timestamp,
         message: None,
-        medal_level,
-        medal_name,
-        medal_room_id,
         guard_level: get_u32(data, "guard_level"),
         wealth_level: get_u32(data, "wealth_level"),
     })
@@ -395,7 +373,6 @@ fn parse_super_chat(v: &serde_json::Value) -> Option<Backing> {
     let uid = get_i64(data, "uid").unwrap_or(0);
     let timestamp = normalize_timestamp(get_i64(data, "start_time").unwrap_or(0));
     let price = get_i64(data, "price").unwrap_or(0).max(0);
-    let (medal_level, medal_name, medal_room_id) = parse_medal(data.get("medal_info"));
 
     Some(Backing {
         id: match get_i64(data, "id") {
@@ -413,9 +390,6 @@ fn parse_super_chat(v: &serde_json::Value) -> Option<Backing> {
         amount_fen: price as u64 * 100,
         timestamp,
         message: get_str(data, "message"),
-        medal_level,
-        medal_name,
-        medal_room_id,
         guard_level: get_u32(data, "guard_level"),
         wealth_level: user.and_then(|u| get_u32(u, "wealth_level")),
     })
@@ -432,7 +406,6 @@ fn parse_guard_buy(v: &serde_json::Value) -> Option<Backing> {
     let num = get_u32(data, "num").unwrap_or(1).max(1);
     let price = get_i64(data, "price").unwrap_or(0).max(0);
     let timestamp = normalize_timestamp(get_i64(data, "start_time").unwrap_or(0));
-    let (medal_level, medal_name, medal_room_id) = parse_medal(data.get("medal_info"));
 
     Some(Backing {
         id: format!("guard-{timestamp}-{uid}-{guard_level}"),
@@ -448,9 +421,6 @@ fn parse_guard_buy(v: &serde_json::Value) -> Option<Backing> {
         amount_fen: coin_to_fen(price * num as i64),
         timestamp,
         message: None,
-        medal_level,
-        medal_name,
-        medal_room_id,
         guard_level: Some(guard_level),
         wealth_level: get_u32(data, "wealth_level"),
     })
@@ -468,19 +438,6 @@ fn guard_name(level: u32) -> &'static str {
 /// 金瓜子 → 分（1000 金瓜子 = 1 元 = 100 分）
 fn coin_to_fen(coin: i64) -> u64 {
     (coin.max(0) as u64) / 10
-}
-
-/// 解析勋章信息 → (等级, 名称, 所属房间 ID)；未佩戴或字段缺失时全为 None
-fn parse_medal(m: Option<&serde_json::Value>) -> (Option<u32>, Option<String>, Option<u32>) {
-    let Some(m) = m.filter(|m| !m.is_null()) else {
-        return (None, None, None);
-    };
-    (
-        get_u32(m, "medal_level").filter(|l| *l > 0),
-        get_str(m, "medal_name"),
-        // 房间 ID 字段名有 medal_room_id / anchor_roomid 两种
-        get_u32(m, "medal_room_id").or_else(|| get_u32(m, "anchor_roomid")),
-    )
 }
 
 /// 读取字符串字段（缺失或类型不符返回 None）
@@ -572,12 +529,7 @@ mod tests {
                 "coin_type": "gold",
                 "rnd": "abc123",
                 "guard_level": 3,
-                "wealth_level": 20,
-                "medal_info": {
-                    "medal_level": 20,
-                    "medal_name": "测试牌",
-                    "medal_room_id": 9999
-                }
+                "wealth_level": 20
             }
         })
     }
@@ -592,8 +544,6 @@ mod tests {
         // 100000 金瓜子 = 100 元 = 10000 分
         assert_eq!(b.amount_fen, 10000);
         assert_eq!(b.id, "gift-abc123", "有 rnd 时用它做去重标识");
-        assert_eq!(b.medal_level, Some(20));
-        assert_eq!(b.medal_room_id, Some(9999));
         assert_eq!(b.guard_level, Some(3));
         assert_eq!(b.wealth_level, Some(20));
     }
@@ -658,12 +608,7 @@ mod tests {
                 "message": "加油",
                 "price": 30,
                 "start_time": 1700000300i64,
-                "guard_level": 2,
-                "medal_info": {
-                    "medal_level": 10,
-                    "medal_name": "牌子",
-                    "anchor_roomid": 9999
-                }
+                "guard_level": 2
             }
         });
         let b = parse_backing(v);
@@ -674,7 +619,6 @@ mod tests {
         assert_eq!(b.message.as_deref(), Some("加油"));
         assert_eq!(b.username, "老板B");
         assert_eq!(b.id, "sc-555");
-        assert_eq!(b.medal_room_id, Some(9999), "兼容 anchor_roomid 写法");
         assert_eq!(b.wealth_level, Some(30));
     }
 
@@ -753,17 +697,10 @@ mod tests {
 
     /// 构造一条完整的 SEND_GIFT_V2（顶层用户信息 + 若干礼物档位）
     fn v2_payload(items: Vec<Vec<u8>>) -> serde_json::Value {
-        let medal = [
-            pb_int(4, 9999),
-            pb_int(5, 20),
-            pb_bytes(6, "测试牌".as_bytes()),
-        ]
-        .concat();
         let mut top = [
             pb_int(1, 10086),
             pb_bytes(2, "老板A".as_bytes()),
             pb_int(5, 3),
-            pb_bytes(8, &medal),
         ]
         .concat();
         for item in items {
@@ -796,9 +733,6 @@ mod tests {
         assert_eq!(b.id, "gift-v2rnd");
         assert_eq!(b.timestamp, 1700000200);
         assert_eq!(b.guard_level, Some(3));
-        assert_eq!(b.medal_level, Some(20));
-        assert_eq!(b.medal_name.as_deref(), Some("测试牌"));
-        assert_eq!(b.medal_room_id, Some(9999));
         assert_eq!(b.wealth_level, None, "V2 广播不带荣耀等级");
     }
 

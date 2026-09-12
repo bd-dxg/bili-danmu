@@ -65,7 +65,7 @@ pub(crate) fn flush_overlay_bounds(app: &AppHandle) {
     }
 }
 
-/// 发送框始终吸附：对齐到弹幕窗正文列下方（左端缩进 role-slot，宽度跟随，高度随字号）
+/// 发送框始终吸附：左端与弹幕区面板背景左边缘齐平，宽度取面板宽度的 80%，高度随字号
 pub(crate) fn sync_sender_docked(app: &AppHandle) {
     let (Some(ov), Some(sender)) = (overlay_window(app), sender_window(app)) else {
         return;
@@ -73,21 +73,33 @@ pub(crate) fn sync_sender_docked(app: &AppHandle) {
     let Ok(pos) = ov.outer_position() else { return };
     let Ok(size) = ov.outer_size() else { return };
     let scale = ov.scale_factor().unwrap_or(1.0);
-    let (indent, right_pad, h) = sender_layout_metrics(app, scale);
+    let (indent, w, h) = sender_layout_metrics(app, scale, size.width);
     let x = pos.x + indent as i32;
     let y = pos.y + size.height as i32;
-    let w = size.width.saturating_sub(indent + right_pad).max(1);
     let _ = sender.set_position(tauri::Position::Physical(tauri::PhysicalPosition::new(x, y)));
     let _ = sender.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(w, h)));
 }
 
-/// 发送框相对弹幕窗的缩进/右距/高度（物理 px），随弹幕字号缩放。
-/// 缩进 = 容器 padding 6px + role-slot 4.8em + 0.7em 间距，
-/// 与 OverlayApp.vue 的 --role-indent 一致（改一处要同步改另一处）。
-fn sender_layout_metrics(app: &AppHandle, scale: f64) -> (u32, u32, u32) {
+/// 弹幕窗容器 padding（px）：对应 OverlayApp.vue 的 .overlay-root padding
+const OVERLAY_PADDING: f64 = 6.0;
+/// 正文列起点（em）：role-slot 4.8em + 0.7em 间距，对应 OverlayApp.vue 的 --role-indent
+const ROLE_INDENT_EM: f64 = 5.5;
+/// 面板背景相对正文列再左让的宽度（em）：对应 OverlayApp.vue 的 --panel-inset
+const PANEL_INSET_EM: f64 = 0.35;
+/// 发送框宽度占面板宽度的比例
+const SENDER_WIDTH_RATIO: f64 = 0.8;
+
+/// 发送框相对弹幕窗的左缩进 / 宽度 / 高度（物理 px），随弹幕字号缩放。
+/// 缩进 = 容器 padding + 面板左边缘（--panel-inset = --role-indent − 0.35em），
+/// 落在面板背景左边缘那条线上；宽度 = 面板宽度（弹幕窗宽 − 左缩进 − 右侧 padding）的 80%。
+/// 改 OverlayApp.vue 的 --role-indent / --panel-inset / 容器 padding 时要同步改这里。
+fn sender_layout_metrics(app: &AppHandle, scale: f64, overlay_width: u32) -> (u32, u32, u32) {
     let font_size = app.state::<OverlayState>().style.lock().unwrap().font_size;
-    let indent = ((6.0 + 5.5 * font_size) * scale).round() as u32;
-    let right_pad = (6.0 * scale).round() as u32;
+    // 面板宽度用未取整的浮点算：缩进先取整会把那半个像素的误差带进宽度
+    let left = (OVERLAY_PADDING + (ROLE_INDENT_EM - PANEL_INSET_EM) * font_size) * scale;
+    let panel_width = overlay_width as f64 - left - OVERLAY_PADDING * scale;
+    let indent = left.round() as u32;
+    let w = ((panel_width * SENDER_WIDTH_RATIO).round() as u32).max(1);
     let h = ((font_size * 3.8 + 8.0) * scale).round() as u32;
-    (indent, right_pad, h)
+    (indent, w, h)
 }

@@ -107,9 +107,6 @@ mod tests {
             amount_fen,
             timestamp: 1000,
             message: None,
-            medal_level: None,
-            medal_name: None,
-            medal_room_id: None,
             guard_level: None,
             wealth_level: None,
         }
