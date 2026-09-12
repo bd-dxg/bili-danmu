@@ -23,7 +23,7 @@ const medal = computed(() =>
 </script>
 
 <template>
-  <div class="danmu-row" :style="{ textShadow: rowShadow(overlayStyle) }" data-tauri-drag-region>
+  <div class="danmu-row row-enter" :style="{ textShadow: rowShadow(overlayStyle) }" data-tauri-drag-region>
     <MetaBadges
       :is-admin="d.is_admin"
       :guard-level="d.guard_level"

@@ -9,3 +9,26 @@ body,
   overflow: hidden;
   font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
 }
+
+/* 新行入场：淡入 + 向上浮现（弹幕行与礼物行共用）。
+
+   只动 transform / opacity：两者都走合成层，不触发重排、不重绘内容。
+   故意不加 will-change：那会让 120 行常驻独立图层，透明窗显存 / 内存吃不消，
+   不加则动画结束后图层会被回收。
+   时长 160ms：每秒 30 条的高频直播间同时最多 5～6 条在动画中。
+   只在新节点挂载时播一次：列表用 :key 复用旧节点，旧行被新行顶上那一下不会重播，
+   连击合并覆盖同一行（同一 key）也不重播。 */
+@keyframes row-rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.5em);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.row-enter {
+  animation: row-rise 160ms ease-out;
+}

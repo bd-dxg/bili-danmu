@@ -19,7 +19,7 @@ function money(fen: number): string {
 </script>
 
 <template>
-  <div class="gift-row" :style="{ textShadow: rowShadow(overlayStyle) }" data-tauri-drag-region>
+  <div class="gift-row row-enter" :style="{ textShadow: rowShadow(overlayStyle) }" data-tauri-drag-region>
     <MetaBadges
       :is-admin="false"
       :guard-level="b.guard_level"

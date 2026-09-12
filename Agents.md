@@ -72,7 +72,7 @@
 
 - 禁止提交：`node_modules/`、`dist/`、`src-tauri/target/`、`src-tauri/gen/schemas/`、`Task/`、`dev.log`、根目录截图（`.gitignore` 已配）
 - 弹幕必须登录态：B 站 2025+ 不向游客推送 `DANMU_MSG`，游客级 token 只是登录路径失败时的兜底（能连上但收不到弹幕）。登录 Cookie 本地持久化；改动协议时用 `scripts/ws-probe.ps1` 验证
-- 弹幕窗口性能敏感（120 条上限、透明层重绘），前端改动注意不要引入高频重排
+- 弹幕窗口性能敏感（120 条上限、透明层重绘），前端改动注意不要引入高频重排；入场动画（`overlay.css` 的 `.row-enter`）只动 `transform` / `opacity`（合成层）且只在新节点挂载时播一次——**不要**给行加 `will-change`（120 行会常驻独立图层），也不要改成逐帧改 height / margin 的效果（每帧重排）
 - 登录 Cookie 在 `config.rs` 的 `save_config_unlocked`（唯一写盘边界）统一 **DPAPI 加密**（`dpapi:` 前缀 + hex）落盘，加解密在 `config/crypto.rs`，读取自动解密（旧版明文无前缀兼容）：任何新增的敏感字段必须走同类加密，勿明文落盘；内存态保持明文
 - `config.rs` 读写持有全局互斥（save_* 均为 load-modify-save）：新增保存函数须沿用 `lock_cfg()` + `*_unlocked` 模式，勿在持锁时调用加锁公共入口（std Mutex 不可重入）
 - 断线自动重连在 `connection.rs` `spawn_connection`（1/2/4/…/30s 退避、10 次上限）；改连接收尾逻辑时保留取消令牌身份检查（`finish_connection`），否则旧任务会误清新连接状态
