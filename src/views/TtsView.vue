@@ -1,30 +1,26 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import DanmakuFilterPanel from "../components/DanmakuFilterPanel.vue";
-import SettingRow from "../components/SettingRow.vue";
-import { useSaveTip } from "../composables/useSaveTip";
-import { useTtsConfig } from "../composables/useTtsConfig";
-import type { DanmakuFilter } from "../types/ipc";
+import { ref } from 'vue'
+
+import DanmakuFilterPanel from '../components/DanmakuFilterPanel.vue'
+import SettingRow from '../components/SettingRow.vue'
+import { useSaveTip } from '../composables/useSaveTip'
+import { useTtsConfig } from '../composables/useTtsConfig'
+
+import type { DanmakuFilter } from '../types/ipc'
 
 // 页内标签：engine / content / filter
-const tab = ref<"engine" | "content" | "filter">("engine");
+const tab = ref<'engine' | 'content' | 'filter'>('engine')
 
-const { savedTip, opError, showSaved, showError } = useSaveTip();
+const { savedTip, opError, showSaved, showError } = useSaveTip()
 // 朗读配置与音色列表：与弹幕显示完全解耦，改动即时生效（下一段朗读开始用新参数）
-const {
-  config,
-  voices,
-  testing,
-  loadingVoices,
-  customVoice,
-  save,
-  testSpeak,
-  refreshVoices,
-} = useTtsConfig(showSaved, showError);
+const { config, voices, testing, loadingVoices, customVoice, save, testSpeak, refreshVoices } = useTtsConfig(
+  showSaved,
+  showError,
+)
 
 function applyFilter(next: DanmakuFilter) {
-  config.value.filter = next;
-  save();
+  config.value.filter = next
+  save()
 }
 </script>
 
@@ -44,8 +40,7 @@ function applyFilter(next: DanmakuFilter) {
         :key="t.key"
         class="tab-btn"
         :class="{ active: tab === t.key }"
-        @click="tab = t.key as 'engine' | 'content' | 'filter'"
-      >
+        @click="tab = t.key as 'engine' | 'content' | 'filter'">
         {{ t.label }}
       </button>
     </div>
@@ -53,12 +48,7 @@ function applyFilter(next: DanmakuFilter) {
     <section v-show="tab === 'engine'" class="tab-pane">
       <div class="setting-card">
         <SettingRow label="开启弹幕朗读">
-          <input
-            v-model="config.enabled"
-            type="checkbox"
-            class="switch"
-            @change="save()"
-          />
+          <input v-model="config.enabled" type="checkbox" class="switch" @change="save()" />
         </SettingRow>
 
         <SettingRow label="音色">
@@ -67,56 +57,37 @@ function applyFilter(next: DanmakuFilter) {
               <option v-for="v in voices" :key="v.id" :value="v.id">
                 {{ v.label }}
               </option>
-              <option v-if="customVoice" :value="customVoice">
-                {{ customVoice }}（不在列表中，可点「刷新」重试）
-              </option>
+              <option v-if="customVoice" :value="customVoice">{{ customVoice }}（不在列表中，可点「刷新」重试）</option>
             </select>
             <button class="ghost-btn" :disabled="loadingVoices" @click="refreshVoices()">
-              {{ loadingVoices ? "获取中…" : "刷新" }}
+              {{ loadingVoices ? '获取中…' : '刷新' }}
             </button>
           </div>
         </SettingRow>
 
         <SettingRow label="语速">
           <div class="size-control">
-            <input
-              v-model.number="config.rate_pct"
-              type="range"
-              min="-50"
-              max="100"
-              step="5"
-              @change="save()"
-            />
+            <input v-model.number="config.rate_pct" type="range" min="-50" max="100" step="5" @change="save()" />
             <span class="value">{{ (1 + config.rate_pct / 100).toFixed(2) }}x</span>
           </div>
         </SettingRow>
 
         <SettingRow label="音量">
           <div class="size-control">
-            <input
-              v-model.number="config.volume_pct"
-              type="range"
-              min="-100"
-              max="100"
-              step="5"
-              @change="save()"
-            />
-            <span class="value"
-              >{{ config.volume_pct > 0 ? "+" : "" }}{{ config.volume_pct }}%</span
-            >
+            <input v-model.number="config.volume_pct" type="range" min="-100" max="100" step="5" @change="save()" />
+            <span class="value">{{ config.volume_pct > 0 ? '+' : '' }}{{ config.volume_pct }}%</span>
           </div>
         </SettingRow>
 
         <SettingRow label="试听当前设置">
           <button class="save-btn" :disabled="testing" @click="testSpeak()">
-            {{ testing ? "朗读中…" : "试听" }}
+            {{ testing ? '朗读中…' : '试听' }}
           </button>
         </SettingRow>
 
         <p class="tip">
-          使用微软 Edge 的在线语音（Edge TTS），共 {{ voices.length }} 个中文音色，
-          普通话排在最前，其后是方言与粤语 / 台湾。当前音色 ID：{{ config.voice }}。
-          合成依赖网络，断网或微软限流时这一段会跳过，不影响下一条。
+          使用微软 Edge 的在线语音（Edge TTS），共 {{ voices.length }} 个中文音色， 普通话排在最前，其后是方言与粤语 /
+          台湾。当前音色 ID：{{ config.voice }}。 合成依赖网络，断网或微软限流时这一段会跳过，不影响下一条。
         </p>
       </div>
     </section>
@@ -124,67 +95,36 @@ function applyFilter(next: DanmakuFilter) {
     <section v-show="tab === 'content'" class="tab-pane">
       <div class="setting-card">
         <SettingRow label="朗读用户名">
-          <input
-            v-model="config.read_username"
-            type="checkbox"
-            class="switch"
-            @change="save()"
-          />
+          <input v-model="config.read_username" type="checkbox" class="switch" @change="save()" />
         </SettingRow>
 
         <SettingRow label="朗读身份前缀（房管 / 舰长）">
-          <input
-            v-model="config.read_role"
-            type="checkbox"
-            class="switch"
-            @change="save()"
-          />
+          <input v-model="config.read_role" type="checkbox" class="switch" @change="save()" />
         </SettingRow>
 
         <SettingRow label="积压时丢弃待播旧弹幕（当前这条念完）">
-          <input
-            v-model="config.interrupt_on_backlog"
-            type="checkbox"
-            class="switch"
-            @change="save()"
-          />
+          <input v-model="config.interrupt_on_backlog" type="checkbox" class="switch" @change="save()" />
         </SettingRow>
 
         <SettingRow label="弹幕内容最大朗读字数（0 = 不限制）">
-          <input
-            v-model.number="config.max_len"
-            type="number"
-            min="0"
-            max="500"
-            class="num"
-            @change="save()"
-          />
+          <input v-model.number="config.max_len" type="number" min="0" max="500" class="num" @change="save()" />
         </SettingRow>
 
         <SettingRow label="待朗读队列上限（超出丢弃最旧）">
-          <input
-            v-model.number="config.max_queue"
-            type="number"
-            min="1"
-            max="200"
-            class="num"
-            @change="save()"
-          />
+          <input v-model.number="config.max_queue" type="number" min="1" max="200" class="num" @change="save()" />
         </SettingRow>
 
         <p class="tip">
           关掉用户名与身份前缀 = 只念弹幕内容（默认）。最大字数只算弹幕正文，
           身份前缀与用户名不占额度。高速直播间建议同时开「积压时丢弃旧弹幕」：
-          念的总是队列里最新的那条，正在念的那条不被打断（避免只听到半句用户名），
-          延迟上限 = 一条朗读时长。队列上限调小则能保证念的都是最新弹幕。
+          念的总是队列里最新的那条，正在念的那条不被打断（避免只听到半句用户名）， 延迟上限 =
+          一条朗读时长。队列上限调小则能保证念的都是最新弹幕。
         </p>
       </div>
     </section>
 
     <section v-show="tab === 'filter'" class="tab-pane">
-      <p class="tip">
-        这里的规则只影响朗读，与「弹幕 → 弹幕过滤」的显示筛选各自独立。
-      </p>
+      <p class="tip">这里的规则只影响朗读，与「弹幕 → 弹幕过滤」的显示筛选各自独立。</p>
       <DanmakuFilterPanel :model-value="config.filter" verb="朗读" @change="applyFilter" />
     </section>
   </div>

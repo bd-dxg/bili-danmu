@@ -1,31 +1,32 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
-import { DEFAULT_DANMAKU_FILTER, type DanmakuFilter } from "../types/ipc";
+import { ref, watch } from 'vue'
+
+import { DEFAULT_DANMAKU_FILTER, type DanmakuFilter } from '../types/ipc'
 
 // 弹幕过滤表单：显示筛选（DanmakuView）与朗读筛选（TtsView）共用同一套规则，
 // 仅「显示 / 朗读」措辞不同，避免两处 markup 各改一遍后语义漂移。
 const props = defineProps<{
-  modelValue: DanmakuFilter;
+  modelValue: DanmakuFilter
   /** 规则动词，用于文案：只「显示」/ 只「朗读」 */
-  verb: string;
-}>();
+  verb: string
+}>()
 
-const emit = defineEmits<{ change: [DanmakuFilter] }>();
+const emit = defineEmits<{ change: [DanmakuFilter] }>()
 
-const draft = ref<DanmakuFilter>({ ...DEFAULT_DANMAKU_FILTER });
+const draft = ref<DanmakuFilter>({ ...DEFAULT_DANMAKU_FILTER })
 // 敏感词文本（textarea 编辑态，保存时解析为词表）
-const sensitiveText = ref("");
+const sensitiveText = ref('')
 
 // 父组件替换整个对象时同步回表单；不深度监听，避免保存回写把输入中的文本打断
-watch(() => props.modelValue, sync, { immediate: true });
+watch(() => props.modelValue, sync, { immediate: true })
 
 function sync(value: DanmakuFilter) {
   draft.value = {
     ...DEFAULT_DANMAKU_FILTER,
     ...value,
     sensitive_words: [...(value.sensitive_words ?? [])],
-  };
-  sensitiveText.value = draft.value.sensitive_words.join("\n");
+  }
+  sensitiveText.value = draft.value.sensitive_words.join('\n')
 }
 
 /** 解析敏感词文本：按换行/中英文逗号/顿号分隔，去空去重 */
@@ -34,21 +35,21 @@ function parseWords(text: string): string[] {
     ...new Set(
       text
         .split(/[\n,，、]/)
-        .map((s) => s.trim())
+        .map(s => s.trim())
         .filter(Boolean),
     ),
-  ];
+  ]
 }
 
 function emitChange() {
   // 数字输入框清空时 v-model.number 为 ''，避免脏值传给 Rust u32 反序列化报错
   if (!Number.isFinite(draft.value.wealth_min)) {
-    draft.value.wealth_min = 0;
+    draft.value.wealth_min = 0
   }
-  emit("change", {
+  emit('change', {
     ...draft.value,
     sensitive_words: parseWords(sensitiveText.value),
-  });
+  })
 }
 </script>
 
@@ -56,22 +57,12 @@ function emitChange() {
   <div class="setting-card">
     <div class="setting-row">
       <span class="label">只{{ verb }}舰长 / 房管弹幕</span>
-      <input
-        v-model="draft.enable_guard_admin"
-        type="checkbox"
-        class="switch"
-        @change="emitChange()"
-      />
+      <input v-model="draft.enable_guard_admin" type="checkbox" class="switch" @change="emitChange()" />
     </div>
 
     <div class="setting-row">
       <span class="label">只{{ verb }}有粉丝牌的弹幕</span>
-      <input
-        v-model="draft.enable_medal"
-        type="checkbox"
-        class="switch"
-        @change="emitChange()"
-      />
+      <input v-model="draft.enable_medal" type="checkbox" class="switch" @change="emitChange()" />
     </div>
 
     <div class="setting-row">
@@ -83,32 +74,20 @@ function emitChange() {
           min="0"
           max="100"
           class="num-inline"
-          @change="emitChange()"
-        />
+          @change="emitChange()" />
         的弹幕
       </span>
-      <input
-        v-model="draft.enable_wealth"
-        type="checkbox"
-        class="switch"
-        @change="emitChange()"
-      />
+      <input v-model="draft.enable_wealth" type="checkbox" class="switch" @change="emitChange()" />
     </div>
     <p class="tip">
-      开启多条身份规则时，弹幕命中任意一条即符合（如同时开舰长/房管与粉丝牌，两者都算）。
-      全部关闭 = 不按身份过滤。
+      开启多条身份规则时，弹幕命中任意一条即符合（如同时开舰长/房管与粉丝牌，两者都算）。 全部关闭 = 不按身份过滤。
     </p>
   </div>
 
   <div class="setting-card words-card">
     <div class="setting-row">
       <span class="label">屏蔽含敏感词的弹幕</span>
-      <input
-        v-model="draft.enable_sensitive"
-        type="checkbox"
-        class="switch"
-        @change="emitChange()"
-      />
+      <input v-model="draft.enable_sensitive" type="checkbox" class="switch" @change="emitChange()" />
     </div>
     <p class="tip">
       每行一个关键词（也支持逗号分隔）。弹幕内容命中任一词即整条不{{ verb }}；
@@ -118,8 +97,7 @@ function emitChange() {
       v-model="sensitiveText"
       class="words-input"
       rows="5"
-      placeholder="每行一个关键词，如：加群 / 广告, 代练"
-    ></textarea>
+      placeholder="每行一个关键词，如：加群 / 广告, 代练"></textarea>
     <div class="words-actions">
       <button class="save-btn" @click="emitChange()">保存敏感词</button>
     </div>

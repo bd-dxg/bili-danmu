@@ -1,0 +1,26 @@
+{
+  "printWidth": 120,
+  "tabWidth": 2,
+  "useTabs": false,
+  "semi": false,
+  "singleQuote": true,
+  "quoteProps": "as-needed",
+  "bracketSpacing": true,
+  "arrowParens": "avoid",
+  "htmlWhitespaceSensitivity": "ignore",
+  "bracketSameLine": true,
+  // 本仓库 core.autocrlf=true，默认的 lf 会让内容未变的文件也显示 modified
+  "endOfLine": "crlf",
+  "sortPackageJson": true,
+  "sortImports": {
+    "groups": [
+      ["value-builtin", "value-external"],
+      ["value-internal", "value-parent", "value-sibling", "value-index"],
+      { "newlinesBetween": true },
+      "type-import",
+      "unknown",
+    ],
+  },
+  // 只格式化代码：文档（.md）与 Rust 清单（Cargo.toml）不参与
+  "ignorePatterns": ["**/*.md", "**/*.toml"],
+}

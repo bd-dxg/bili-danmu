@@ -1,7 +1,7 @@
 :root {
   /* 默认（浅色系统主题） */
   color-scheme: light;
-  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
 
   --bg: #f5f6f8;
   --bg-side: #eceef2;
@@ -68,7 +68,9 @@ body,
   background: var(--bg);
   color: var(--text);
   user-select: none;
-  transition: background-color 0.15s, color 0.15s;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
 }
 
 button {

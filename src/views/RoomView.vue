@@ -1,30 +1,21 @@
 <script setup lang="ts">
-import { onMounted } from "vue";
-import { refreshLogin, useLogin } from "../composables/useLogin";
-import { useRoomConnection } from "../composables/useRoomConnection";
-import StatusDashboard from "../components/StatusDashboard.vue";
+import { onMounted } from 'vue'
 
-onMounted(refreshLogin);
+import StatusDashboard from '../components/StatusDashboard.vue'
+import { refreshLogin, useLogin } from '../composables/useLogin'
+import { useRoomConnection } from '../composables/useRoomConnection'
 
-const { loggedIn, uid, uname, openLoginDialog, logout } = useLogin();
-const {
-  roomId,
-  busy,
-  status,
-  errorMsg,
-  recentRooms,
-  locked,
-  statusText,
-  connect,
-  disconnect,
-} = useRoomConnection();
+onMounted(refreshLogin)
+
+const { loggedIn, uid, uname, openLoginDialog, logout } = useLogin()
+const { roomId, busy, status, errorMsg, recentRooms, locked, statusText, connect, disconnect } = useRoomConnection()
 
 // 退出登录：先断开直播连接，再清登录态（登录是收弹幕的前提）
 async function handleLogout() {
-  if (status.value.state === "connected" || status.value.state === "connecting") {
-    await disconnect();
+  if (status.value.state === 'connected' || status.value.state === 'connecting') {
+    await disconnect()
   }
-  await logout();
+  await logout()
 }
 </script>
 
@@ -32,7 +23,11 @@ async function handleLogout() {
   <div class="room-page">
     <div class="login-bar" :class="{ logged: loggedIn }">
       <template v-if="loggedIn">
-        <span class="ok">✓ 已登录<span v-if="uname">：{{ uname }}</span><span v-else>（UID {{ uid }}）</span></span>
+        <span class="ok">
+          ✓ 已登录
+          <span v-if="uname">：{{ uname }}</span>
+          <span v-else>（UID {{ uid }}）</span>
+        </span>
         <button class="link-btn" @click="handleLogout">退出登录</button>
       </template>
       <template v-else>
@@ -49,22 +44,9 @@ async function handleLogout() {
         class="room-input"
         type="number"
         placeholder="输入直播间 ID，如 22312451"
-        :disabled="locked"
-      />
-      <button
-        v-if="status.state === 'connected'"
-        class="btn danger"
-        :disabled="busy"
-        @click="disconnect"
-      >
-        断开
-      </button>
-      <button
-        v-else
-        class="btn primary"
-        :disabled="busy || status.state === 'connecting'"
-        @click="connect()"
-      >
+        :disabled="locked" />
+      <button v-if="status.state === 'connected'" class="btn danger" :disabled="busy" @click="disconnect">断开</button>
+      <button v-else class="btn primary" :disabled="busy || status.state === 'connecting'" @click="connect()">
         连接
       </button>
     </div>
@@ -77,8 +59,7 @@ async function handleLogout() {
         class="crumb"
         :title="`房间 ${r.room_id}`"
         :disabled="busy || locked"
-        @click="connect(r.room_id)"
-      >
+        @click="connect(r.room_id)">
         {{ r.uname || r.room_id }}
       </button>
     </div>
@@ -93,12 +74,9 @@ async function handleLogout() {
           yellow: status.state === 'connecting',
           red: status.state === 'error',
           gray: status.state === 'disconnected',
-        }"
-      ></span>
+        }"></span>
       <span>{{ statusText }}</span>
-      <span v-if="status.state === 'connected'" class="room-tag">
-        房间 {{ status.roomId }}（30s 心跳保活中）
-      </span>
+      <span v-if="status.state === 'connected'" class="room-tag">房间 {{ status.roomId }}（30s 心跳保活中）</span>
       <span v-if="status.state === 'error' && status.message" class="room-tag">
         {{ status.message }}
       </span>
@@ -251,7 +229,7 @@ h2 {
 }
 
 .crumb + .crumb::before {
-  content: "›";
+  content: '›';
   color: var(--text-faint);
   margin-right: 8px;
 }

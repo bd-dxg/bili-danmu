@@ -1,28 +1,25 @@
 <script setup lang="ts">
-import MetaBadges from "./MetaBadges.vue";
-import { rowShadow } from "./row-style";
-import type { DisplayBacking, OverlayStyle } from "../types/ipc";
+import MetaBadges from './MetaBadges.vue'
+import { rowShadow } from './row-style'
+
+import type { DisplayBacking, OverlayStyle } from '../types/ipc'
 
 // 单条礼物行：徽章区（与弹幕行共用）+ 正文区（用户名 / 送出 / 礼物名 / 数量 / 金额）。
 // 字体与描边跟随弹幕样式，礼物名与金额用金色与弹幕正文区分。
 defineProps<{
-  b: DisplayBacking;
-  overlayStyle: OverlayStyle;
-}>();
+  b: DisplayBacking
+  overlayStyle: OverlayStyle
+}>()
 
 /** 金额展示：分 → ¥X（整数元省略小数） */
 function money(fen: number): string {
-  const yuan = fen / 100;
-  return Number.isInteger(yuan) ? `¥${yuan}` : `¥${yuan.toFixed(2)}`;
+  const yuan = fen / 100
+  return Number.isInteger(yuan) ? `¥${yuan}` : `¥${yuan.toFixed(2)}`
 }
 </script>
 
 <template>
-  <div
-    class="gift-row"
-    :style="{ textShadow: rowShadow(overlayStyle) }"
-    data-tauri-drag-region
-  >
+  <div class="gift-row" :style="{ textShadow: rowShadow(overlayStyle) }" data-tauri-drag-region>
     <MetaBadges
       :is-admin="false"
       :guard-level="b.guard_level"
@@ -30,29 +27,23 @@ function money(fen: number): string {
       :medal-level="b.medal_level"
       :is-room-medal="b.isRoomMedal"
       :wealth-level="b.wealth_level"
-      :overlay-style="overlayStyle"
-    />
+      :overlay-style="overlayStyle" />
     <span class="msg">
       <span
         class="user"
         :style="{
           color: overlayStyle.username_color,
           fontWeight: overlayStyle.bold ? 800 : 600,
-        }"
-        >{{ b.username }}</span
-      >
-      <span class="action">{{ b.kind === "super_chat" ? "发送" : "送出" }}</span>
+        }">
+        {{ b.username }}
+      </span>
+      <span class="action">{{ b.kind === 'super_chat' ? '发送' : '送出' }}</span>
       <span class="gift" :style="{ fontWeight: overlayStyle.bold ? 800 : 600 }">
         {{ b.gift_name }}
-        <template v-if="b.num > 1"> ×{{ b.num }}</template>
+        <template v-if="b.num > 1">{{ ' ×' + b.num }}</template>
       </span>
       <!-- 醒目留言正文：超宽在正文区折行，续行与首行同列 -->
-      <span
-        v-if="b.message"
-        class="message"
-        :style="{ color: overlayStyle.content_color }"
-        >{{ b.message }}</span
-      >
+      <span v-if="b.message" class="message" :style="{ color: overlayStyle.content_color }">{{ b.message }}</span>
     </span>
     <!-- 金额独立成列、右对齐到行尾：不受用户名 / 礼物名 / 数量长度影响，永远在同一竖线上 -->
     <span class="amount" :style="{ fontWeight: overlayStyle.bold ? 800 : 600 }">

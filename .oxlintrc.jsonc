@@ -1,0 +1,9 @@
+{
+  "plugins": ["vue", "typescript", "unicorn", "oxc", "import"],
+  // browser：Vue 网页项目需要 window / document 等浏览器全局变量
+  "env": { "browser": true, "builtin": true },
+  "options": {
+    "typeAware": true,
+    "typeCheck": true,
+  },
+}

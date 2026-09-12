@@ -1,88 +1,89 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
-import QRCode from "qrcode";
-import { invoke } from "@tauri-apps/api/core";
-import { refreshLogin, useLogin } from "../composables/useLogin";
+import { invoke } from '@tauri-apps/api/core'
+import QRCode from 'qrcode'
+import { onMounted, onUnmounted, ref } from 'vue'
 
-const { loginDialogOpen, closeLoginDialog } = useLogin();
+import { refreshLogin, useLogin } from '../composables/useLogin'
 
-const QRData = ref<{ url: string; key: string } | null>(null);
-const qrImage = ref("");
-const loading = ref(true);
-const phase = ref<"scanning" | "confirmed" | "success" | "expired" | "error">("scanning");
-const message = ref("");
+const { loginDialogOpen, closeLoginDialog } = useLogin()
 
-let pollTimer: ReturnType<typeof setInterval> | undefined;
+const QRData = ref<{ url: string; key: string } | null>(null)
+const qrImage = ref('')
+const loading = ref(true)
+const phase = ref<'scanning' | 'confirmed' | 'success' | 'expired' | 'error'>('scanning')
+const message = ref('')
+
+let pollTimer: ReturnType<typeof setInterval> | undefined
 
 async function startLogin() {
-  loading.value = true;
-  phase.value = "scanning";
-  message.value = "";
+  loading.value = true
+  phase.value = 'scanning'
+  message.value = ''
   try {
-    const data = await invoke<{ url: string; key: string }>("qr_generate");
-    QRData.value = data;
-    qrImage.value = await QRCode.toDataURL(data.url, { width: 220, margin: 1 });
-    loading.value = false;
-    startPolling(data.key);
+    const data = await invoke<{ url: string; key: string }>('qr_generate')
+    QRData.value = data
+    qrImage.value = await QRCode.toDataURL(data.url, { width: 220, margin: 1 })
+    loading.value = false
+    startPolling(data.key)
   } catch (e) {
-    phase.value = "error";
-    message.value = `生成二维码失败: ${e}`;
-    loading.value = false;
+    phase.value = 'error'
+    message.value = `生成二维码失败: ${e}`
+    loading.value = false
   }
 }
 
 function startPolling(key: string) {
-  stopPolling();
+  stopPolling()
   pollTimer = setInterval(async () => {
     try {
       const res = await invoke<{
-        status: string;
-        message?: string;
-        cookies?: string;
-      }>("qr_poll", { key });
+        status: string
+        message?: string
+        cookies?: string
+      }>('qr_poll', { key })
       // Rust serde tag 输出为 PascalCase
       switch (res.status) {
-        case "Success":
-          phase.value = "success";
-          message.value = "登录成功";
-          stopPolling();
-          await refreshLogin();
-          setTimeout(() => closeLoginDialog(), 600);
-          break;
-        case "Confirmed":
-          phase.value = "confirmed";
-          message.value = "已扫码，请在手机上确认登录";
-          break;
-        case "Scanning":
-          phase.value = "scanning";
-          break;
-        case "Expired":
-          phase.value = "expired";
-          message.value = "二维码已过期，请重新生成";
-          stopPolling();
-          break;
+        case 'Success':
+          phase.value = 'success'
+          message.value = '登录成功'
+          stopPolling()
+          await refreshLogin()
+          setTimeout(() => closeLoginDialog(), 600)
+          break
+        case 'Confirmed':
+          phase.value = 'confirmed'
+          message.value = '已扫码，请在手机上确认登录'
+          break
+        case 'Scanning':
+          phase.value = 'scanning'
+          break
+        case 'Expired':
+          phase.value = 'expired'
+          message.value = '二维码已过期，请重新生成'
+          stopPolling()
+          break
         default:
-          phase.value = "error";
-          message.value = res.message ?? "未知错误";
-          stopPolling();
+          phase.value = 'error'
+          message.value = res.message ?? '未知错误'
+          stopPolling()
       }
     } catch (e) {
-      phase.value = "error";
-      message.value = String(e);
-      stopPolling();
+      phase.value = 'error'
+      message.value = String(e)
+      stopPolling()
     }
-  }, 1500);
+  }, 1500)
 }
 
 function stopPolling() {
   if (pollTimer) {
-    clearInterval(pollTimer);
-    pollTimer = undefined;
+    clearInterval(pollTimer)
+    pollTimer = undefined
   }
 }
 
-onMounted(startLogin);
-onUnmounted(stopPolling);
+onMounted(startLogin)
+onUnmounted(stopPolling)
 </script>
 
 <template>
