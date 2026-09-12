@@ -1,26 +1,27 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
-import RoomView from "./views/RoomView.vue";
-import DanmakuView from "./views/DanmakuView.vue";
-import AboutView from "./views/AboutView.vue";
-import TtsView from "./views/TtsView.vue";
-import StreamerView from "./views/StreamerView.vue";
-import LoginDialog from "./components/LoginDialog.vue";
-import { refreshLogin } from "./composables/useLogin";
+import { onMounted, ref } from 'vue'
 
-onMounted(refreshLogin);
+import LoginDialog from './components/LoginDialog.vue'
+import { refreshLogin } from './composables/useLogin'
+import AboutView from './views/AboutView.vue'
+import DanmakuView from './views/DanmakuView.vue'
+import RoomView from './views/RoomView.vue'
+import StreamerView from './views/StreamerView.vue'
+import TtsView from './views/TtsView.vue'
 
-type NavKey = "room" | "danmaku" | "tts" | "streamer" | "about";
+onMounted(refreshLogin)
+
+type NavKey = 'room' | 'danmaku' | 'tts' | 'streamer' | 'about'
 
 const navs: { key: NavKey; label: string }[] = [
-  { key: "room", label: "直播间连接" },
-  { key: "danmaku", label: "弹幕设置" },
-  { key: "tts", label: "朗读设置" },
-  { key: "streamer", label: "主播分区" },
-  { key: "about", label: "关于软件" },
-];
+  { key: 'room', label: '直播间连接' },
+  { key: 'danmaku', label: '弹幕设置' },
+  { key: 'tts', label: '朗读设置' },
+  { key: 'streamer', label: '主播分区' },
+  { key: 'about', label: '关于软件' },
+]
 
-const current = ref<NavKey>("room");
+const current = ref<NavKey>('room')
 </script>
 
 <template>
@@ -33,8 +34,7 @@ const current = ref<NavKey>("room");
           :key="n.key"
           class="nav-item"
           :class="{ active: current === n.key }"
-          @click="current = n.key"
-        >
+          @click="current = n.key">
           {{ n.label }}
         </button>
       </nav>

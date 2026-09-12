@@ -1,41 +1,41 @@
 <script setup lang="ts">
-import type { OverlayStyle } from "../types/ipc";
+import type { OverlayStyle } from '../types/ipc'
 
 // 弹幕行 / 礼物行共用的身份徽章区：身份前缀（房管 / 舰长）+ 荣耀等级 + 粉丝牌。
 // 单独成组件是为了让两区共用同一套列宽（role-slot 4.8em）——复制一份 CSS 后
 // 只改单侧，就会与发送弹幕框的缩进错位（见 window.rs 的 sender_layout_metrics）。
 const props = defineProps<{
   /** 是否房管（礼物事件拿不到该字段，恒传 false） */
-  isAdmin: boolean;
+  isAdmin: boolean
   /** 舰队等级：3 舰长 / 2 提督 / 1 总督 */
-  guardLevel?: number;
-  medalName?: string;
-  medalLevel?: number;
+  guardLevel?: number
+  medalName?: string
+  medalLevel?: number
   /** 粉丝牌是否来自当前房间（决定本房牌绿 / 其它房牌灰的配色） */
-  isRoomMedal: boolean;
+  isRoomMedal: boolean
   /** 荣耀等级（全站财富等级） */
-  wealthLevel?: number;
-  overlayStyle: OverlayStyle;
-}>();
+  wealthLevel?: number
+  overlayStyle: OverlayStyle
+}>()
 
 /** 身份前缀列表（可叠加）：房管 + 舰长/提督/总督，按展示顺序 */
 function rolesOf(): { label: string; cls: string }[] {
-  const roles: { label: string; cls: string }[] = [];
+  const roles: { label: string; cls: string }[] = []
   if (props.isAdmin) {
-    roles.push({ label: "房管", cls: "admin" });
+    roles.push({ label: '房管', cls: 'admin' })
   }
-  const g = props.guardLevel;
+  const g = props.guardLevel
   if (g && g >= 1) {
     // 舰队等级：3=舰长（蓝） 2=提督（紫） 1=总督（金红），三档配色区分
     const guard =
       g === 3
-        ? { label: "舰长", cls: "guard-captain" }
+        ? { label: '舰长', cls: 'guard-captain' }
         : g === 2
-          ? { label: "提督", cls: "guard-admiral" }
-          : { label: "总督", cls: "guard-governor" };
-    roles.push(guard);
+          ? { label: '提督', cls: 'guard-admiral' }
+          : { label: '总督', cls: 'guard-governor' }
+    roles.push(guard)
   }
-  return roles;
+  return roles
 }
 </script>
 
@@ -54,10 +54,10 @@ function rolesOf(): { label: string; cls: string }[] {
       <span class="chip lv">LV{{ wealthLevel }}</span>
     </template>
     <template v-if="overlayStyle.show_medal && medalName && isRoomMedal">
-      <span class="chip medal-room"> {{ medalName }}{{ medalLevel ?? 0 }} </span>
+      <span class="chip medal-room">{{ medalName }}{{ medalLevel ?? 0 }}</span>
     </template>
     <template v-else-if="overlayStyle.show_medal && medalName">
-      <span class="chip medal-other"> {{ medalName }}{{ medalLevel ?? 0 }} </span>
+      <span class="chip medal-other">{{ medalName }}{{ medalLevel ?? 0 }}</span>
     </template>
   </span>
 </template>

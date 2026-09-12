@@ -3,7 +3,7 @@
 //
 // 自身不写样式：.setting-row 与 .label 的规则在被引用页面的 scoped 样式里
 // （子组件根节点会带上父作用域标记，故仍然生效）。
-defineProps<{ label: string }>();
+defineProps<{ label: string }>()
 </script>
 
 <template>

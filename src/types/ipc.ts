@@ -3,42 +3,42 @@
 
 /** 连接状态事件（Rust → Vue，事件名 room-status） */
 export type RoomStatusEvent =
-  | { state: "disconnected" }
-  | { state: "connecting"; roomId: number }
+  | { state: 'disconnected' }
+  | { state: 'connecting'; roomId: number }
   /** roomId 为真实房间号（短号解析后） */
-  | { state: "connected"; roomId: number }
-  | { state: "error"; roomId?: number; message: string };
+  | { state: 'connected'; roomId: number }
+  | { state: 'error'; roomId?: number; message: string }
 
 /** 弹幕事件（Rust → Vue，事件名 danmaku） */
 export interface DanmakuEvent {
-  id: string;
-  username: string;
-  content: string;
+  id: string
+  username: string
+  content: string
   /** Unix 秒 */
-  timestamp: number;
+  timestamp: number
   /** 弹幕颜色，如 "#FFFFFF"；缺省用默认色 */
-  color?: string;
+  color?: string
   // ---- 用户身份（M3.5 增强，供 TTS 过滤与名牌展示） ----
   /** 粉丝勋章等级 */
-  medal_level?: number;
+  medal_level?: number
   /** 粉丝勋章名 */
-  medal_name?: string;
+  medal_name?: string
   /** 勋章所属房间 ID（= 当前房间即主播粉丝牌） */
-  medal_room_id?: number;
+  medal_room_id?: number
   /** 用户等级 */
-  user_level?: number;
+  user_level?: number
   /** 舰队：3舰长 2提督 1总督 */
-  guard_level?: number;
+  guard_level?: number
   /** 荣耀等级（全站财富等级） */
-  wealth_level?: number;
+  wealth_level?: number
   /** 是否房管 */
-  is_admin: boolean;
+  is_admin: boolean
 }
 
 /** Overlay 弹幕行数据：弹幕事件 + 展示所需的派生标记 */
 export interface DisplayDanmaku extends DanmakuEvent {
   /** 粉丝牌来自当前房间（决定本房牌绿 / 其它房牌灰的配色） */
-  isRoomMedal: boolean;
+  isRoomMedal: boolean
 }
 
 /**
@@ -47,44 +47,44 @@ export interface DisplayDanmaku extends DanmakuEvent {
  * 同一连击分组的更新会复用同一个 id 重复下发，前端按 id 覆盖而不新增行。
  */
 export interface BackingEvent {
-  id: string;
-  kind: "gift" | "combo" | "super_chat" | "guard";
-  uid: number;
-  username: string;
+  id: string
+  kind: 'gift' | 'combo' | 'super_chat' | 'guard'
+  uid: number
+  username: string
   /** 礼物名 / 上舰档位名 / 醒目留言固定为「醒目留言」 */
-  gift_name: string;
-  gift_id: number;
-  num: number;
+  gift_name: string
+  gift_id: number
+  num: number
   /** 人民币价值（分），1 元 = 100 分 */
-  amount_fen: number;
+  amount_fen: number
   /** Unix 秒 */
-  timestamp: number;
+  timestamp: number
   /** 醒目留言正文 */
-  message?: string;
+  message?: string
   // ---- 用户身份（供礼物行复用弹幕的徽章区） ----
-  medal_level?: number;
-  medal_name?: string;
-  medal_room_id?: number;
-  guard_level?: number;
-  wealth_level?: number;
+  medal_level?: number
+  medal_name?: string
+  medal_room_id?: number
+  guard_level?: number
+  wealth_level?: number
 }
 
 /** Overlay 礼物行数据：打赏事件 + 展示所需的派生标记 */
 export interface DisplayBacking extends BackingEvent {
   /** 粉丝牌来自当前房间（决定本房牌绿 / 其它房牌灰的配色） */
-  isRoomMedal: boolean;
+  isRoomMedal: boolean
 }
 
 /** 礼物列表配置（Rust ↔ Vue，事件名 gift-config） */
 export interface GiftConfig {
   /** 是否在弹幕窗展示礼物区 */
-  enabled: boolean;
+  enabled: boolean
   /** 打赏金额门槛（元）：0 = 全部付费打赏 */
-  min_amount_yuan: number;
+  min_amount_yuan: number
   /** 礼物区最多同时显示的条数 */
-  max_rows: number;
+  max_rows: number
   /** 连击合并窗口（秒） */
-  combo_window_secs: number;
+  combo_window_secs: number
 }
 
 /** 礼物列表默认配置（与 config/types.rs 的 GiftConfig::default 保持一致） */
@@ -93,83 +93,83 @@ export const DEFAULT_GIFT_CONFIG: GiftConfig = {
   min_amount_yuan: 0,
   max_rows: 5,
   combo_window_secs: 5,
-};
+}
 
 /** 礼物朗读配置（Rust ↔ Vue） */
 export interface GiftTtsConfig {
   /** 是否朗读打赏（独立于弹幕朗读开关与礼物区显示开关） */
-  enabled: boolean;
+  enabled: boolean
   /** 朗读金额门槛（元）：0 = 全部付费打赏 */
-  min_amount_yuan: number;
+  min_amount_yuan: number
 }
 
 /** 礼物朗读默认配置（与 config/types.rs 的 GiftTtsConfig::default 保持一致） */
 export const DEFAULT_GIFT_TTS_CONFIG: GiftTtsConfig = {
   enabled: false,
   min_amount_yuan: 0,
-};
+}
 
 /** Overlay 弹幕样式（Rust ↔ Vue） */
 export interface OverlayStyle {
-  font_size: number;
-  font_family: string;
-  show_wealth: boolean;
-  show_medal: boolean;
-  show_role: boolean;
-  username_color: string;
-  content_color: string;
-  bold: boolean;
-  outline: boolean;
-  outline_color: string;
-  outline_width: number;
+  font_size: number
+  font_family: string
+  show_wealth: boolean
+  show_medal: boolean
+  show_role: boolean
+  username_color: string
+  content_color: string
+  bold: boolean
+  outline: boolean
+  outline_color: string
+  outline_width: number
   /** 弹幕行间距 px（0=不额外加，仅行高） */
-  row_gap: number;
+  row_gap: number
   /** 弹幕区 / 礼物区的背景不透明度（0-100，0 = 完全透明，100 = 纯黑） */
-  bg_opacity: number;
+  bg_opacity: number
 }
 
 /** Overlay 弹幕样式默认值（与 config/types.rs 的 OverlayStyle::default 保持一致） */
 export const DEFAULT_OVERLAY_STYLE: OverlayStyle = {
   font_size: 17,
-  font_family: "Microsoft YaHei UI",
+  font_family: 'Microsoft YaHei UI',
   show_wealth: true,
   show_medal: true,
   show_role: true,
-  username_color: "#85DEF1",
-  content_color: "#FFFFFF",
+  username_color: '#85DEF1',
+  content_color: '#FFFFFF',
   bold: true,
   outline: true,
-  outline_color: "#000000",
+  outline_color: '#000000',
   outline_width: 2,
   row_gap: 0,
   bg_opacity: 35,
-};
+}
 
 /** connect_room 返回值 */
-export type ConnectResult = { ok: true } | { ok: false; message: string };
+export type ConnectResult = { ok: true } | { ok: false; message: string }
 
 /** 最近连接过的直播间（Rust 持久化，主界面输入框下方面包屑） */
 export interface RecentRoom {
   /** 真实房间号（短号已解析） */
-  room_id: number;
+  room_id: number
   /** 主播昵称（接口获取失败为 null，前端回退显示房间号） */
-  uname?: string | null;
+  uname?: string | null
 }
 
 /** 弹幕过滤配置（Rust ↔ Vue，事件名 danmaku-filter） */
 export interface DanmakuFilter {
   /** 只显示舰长（全部大航海）/ 房管弹幕 */
-  enable_guard_admin: boolean;
+  enable_guard_admin: boolean
   /** 只显示有粉丝牌的弹幕 */
-  enable_medal: boolean;
+  enable_medal: boolean
   /** 只显示荣耀等级 ≥ wealth_min 的弹幕 */
-  enable_wealth: boolean;
+  enable_wealth: boolean
   /** 荣耀等级门槛 */
-  wealth_min: number;
+  wealth_min: number
   /** 屏蔽含敏感词的弹幕（整条丢弃） */
-  enable_sensitive: boolean;
+  enable_sensitive: boolean
   /** 敏感词表（内容含任一即丢弃） */
-  sensitive_words: string[];
+  sensitive_words: string[]
 }
 
 /** 弹幕过滤默认值（全关 = 不过滤） */
@@ -180,61 +180,61 @@ export const DEFAULT_DANMAKU_FILTER: DanmakuFilter = {
   wealth_min: 0,
   enable_sensitive: false,
   sensitive_words: [],
-};
+}
 
 /** Edge TTS 音色（tts_list_voices 返回） */
 export interface TtsVoice {
-  id: string;
-  label: string;
+  id: string
+  label: string
 }
 
 /** TTS 弹幕朗读配置（Rust ↔ Vue） */
 export interface TtsConfig {
   /** 总开关 */
-  enabled: boolean;
+  enabled: boolean
   /** Edge TTS 音色名 */
-  voice: string;
+  voice: string
   /** 语速百分比偏移（-50 = 半速，+50 = 1.5 倍速） */
-  rate_pct: number;
+  rate_pct: number
   /** 音量百分比偏移 */
-  volume_pct: number;
+  volume_pct: number
   /** 是否在正文前念用户名 */
-  read_username: boolean;
+  read_username: boolean
   /** 是否在正文前念身份前缀（房管 / 舰长） */
-  read_role: boolean;
+  read_role: boolean
   /** 弹幕正文最大朗读字数（不含身份前缀与用户名，0 = 不限制） */
-  max_len: number;
+  max_len: number
   /** 待朗读队列上限（超出丢弃最旧的） */
-  max_queue: number;
+  max_queue: number
   /** 积压时丢弃待播旧弹幕（当前这条念完） */
-  interrupt_on_backlog: boolean;
+  interrupt_on_backlog: boolean
   /** 朗读筛选条件（与弹幕显示筛选相互独立） */
-  filter: DanmakuFilter;
+  filter: DanmakuFilter
 }
 
 /** 仪表盘状态快照（get_dashboard_status 返回，主窗口直播间页底部只读展示） */
 export interface DashboardStatus {
   overlay: {
     /** 弹幕窗是否可见 */
-    visible: boolean;
+    visible: boolean
     /** 鼠标穿透是否开启 */
-    clickthrough: boolean;
+    clickthrough: boolean
     /** 是否始终置顶 */
-    always_on_top: boolean;
-  };
+    always_on_top: boolean
+  }
   tts: {
-    enabled: boolean;
+    enabled: boolean
     /** 朗读筛选条件（与显示筛选相互独立） */
-    filter: DanmakuFilter;
-  };
+    filter: DanmakuFilter
+  }
   /** 最近 10 秒接收到的弹幕条数 */
-  danmaku_rate: number;
+  danmaku_rate: number
 }
 
 /** TTS 默认配置 */
 export const DEFAULT_TTS_CONFIG: TtsConfig = {
   enabled: false,
-  voice: "zh-CN-XiaoxiaoNeural",
+  voice: 'zh-CN-XiaoxiaoNeural',
   rate_pct: 0,
   volume_pct: 0,
   read_username: false,
@@ -244,4 +244,4 @@ export const DEFAULT_TTS_CONFIG: TtsConfig = {
   max_queue: 5,
   interrupt_on_backlog: true,
   filter: DEFAULT_DANMAKU_FILTER,
-};
+}

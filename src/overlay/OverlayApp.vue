@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
-import DanmakuRow from "./DanmakuRow.vue";
-import GiftRow from "./GiftRow.vue";
+import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+
 import {
   DEFAULT_DANMAKU_FILTER,
   DEFAULT_GIFT_CONFIG,
@@ -16,79 +15,79 @@ import {
   type GiftConfig,
   type OverlayStyle,
   type RoomStatusEvent,
-} from "../types/ipc";
+} from '../types/ipc'
+import DanmakuRow from './DanmakuRow.vue'
+import GiftRow from './GiftRow.vue'
 
-const danmakuList = ref<DisplayDanmaku[]>([]);
+const danmakuList = ref<DisplayDanmaku[]>([])
 // 礼物列表：Rust 侧已做完连击合并与金额门槛，这里只负责按 id 覆盖与条数上限
-const giftList = ref<DisplayBacking[]>([]);
-const giftCfg = ref<GiftConfig>({ ...DEFAULT_GIFT_CONFIG });
-const currentRoomId = ref(0);
+const giftList = ref<DisplayBacking[]>([])
+const giftCfg = ref<GiftConfig>({ ...DEFAULT_GIFT_CONFIG })
+const currentRoomId = ref(0)
 // 连接状态（空窗时显示初始化提示，避免无界面窗口）
-const connState = ref<"disconnected" | "connected">("disconnected");
+const connState = ref<'disconnected' | 'connected'>('disconnected')
 // 弹幕过滤配置（设置页变更 → Rust 广播 danmaku-filter 事件 → 实时生效）
-const filter = ref<DanmakuFilter>({ ...DEFAULT_DANMAKU_FILTER });
+const filter = ref<DanmakuFilter>({ ...DEFAULT_DANMAKU_FILTER })
 // 弹幕样式（字号/字体/是否用原色）；初值用共用默认值，挂载后从 Rust 拉真实配置
-const style = ref<OverlayStyle>({ ...DEFAULT_OVERLAY_STYLE });
+const style = ref<OverlayStyle>({ ...DEFAULT_OVERLAY_STYLE })
 
 // 弹幕区 / 礼物区共用的半透明黑（背景不透明度 0-100 → alpha 0-1）
-const bgColor = computed(
-  () => `rgba(0, 0, 0, ${(style.value.bg_opacity / 100).toFixed(2)})`,
-);
+const bgColor = computed(() => `rgba(0, 0, 0, ${(style.value.bg_opacity / 100).toFixed(2)})`)
 
-const MAX_ITEMS = 120;
+const MAX_ITEMS = 120
 
 /** 连接状态 → 界面状态（事件与轮询共用，去重） */
 function applyConnStatus(st: RoomStatusEvent) {
-  if (st.state === "connected") {
-    const was = connState.value === "connected";
-    const prevRoom = currentRoomId.value;
-    connState.value = "connected";
-    currentRoomId.value = st.roomId;
+  if (st.state === 'connected') {
+    const was = connState.value === 'connected'
+    const prevRoom = currentRoomId.value
+    connState.value = 'connected'
+    currentRoomId.value = st.roomId
     // 进入（或换房）时：清空旧提示并以系统行提示入场
     if (!was || prevRoom !== st.roomId) {
-      danmakuList.value = [];
-      giftList.value = [];
-      pushSystem(`已进入直播间 ${st.roomId}，等待弹幕…`);
+      danmakuList.value = []
+      giftList.value = []
+      pushSystem(`已进入直播间 ${st.roomId}，等待弹幕…`)
     }
-  } else if (st.state === "connecting") {
-    if (connState.value !== "connecting") {
-      connState.value = "connecting";
-      danmakuList.value = [];
-      giftList.value = [];
-      pushSystem("连接中…");
+  } else if (st.state === 'connecting') {
+    if (connState.value !== 'connecting') {
+      connState.value = 'connecting'
+      danmakuList.value = []
+      giftList.value = []
+      pushSystem('连接中…')
     }
   } else {
-    if (connState.value !== "disconnected") {
-      connState.value = "disconnected";
-      danmakuList.value = [];
-      giftList.value = [];
-      pushSystem("未连接 · 请在主界面连接直播间");
+    if (connState.value !== 'disconnected') {
+      connState.value = 'disconnected'
+      danmakuList.value = []
+      giftList.value = []
+      pushSystem('未连接 · 请在主界面连接直播间')
     }
   }
 }
 
 /** 推送系统提示行（无用户名，纯文本，与弹幕同样式） */
 function pushSystem(text: string) {
-  const list = danmakuList.value;
+  const list = danmakuList.value
   list.push({
     id: `sys-${Date.now()}-${list.length}`,
-    username: "",
+    username: '',
     content: text,
     timestamp: Date.now() / 1000,
     is_admin: false,
     isRoomMedal: false,
-  });
+  })
   if (list.length > MAX_ITEMS) {
-    list.splice(0, list.length - MAX_ITEMS);
+    list.splice(0, list.length - MAX_ITEMS)
   }
 }
 
 /** 追加一条弹幕，超出上限丢弃最旧的 */
 function pushDanmaku(d: DisplayDanmaku) {
-  const list = danmakuList.value;
-  list.push(d);
+  const list = danmakuList.value
+  list.push(d)
   if (list.length > MAX_ITEMS) {
-    list.splice(0, list.length - MAX_ITEMS);
+    list.splice(0, list.length - MAX_ITEMS)
   }
 }
 
@@ -97,16 +96,16 @@ function pushDanmaku(d: DisplayDanmaku) {
  * 超出「礼物区最多显示条数」时丢弃最旧的。
  */
 function upsertGift(b: DisplayBacking) {
-  const list = giftList.value;
-  const i = list.findIndex((x) => x.id === b.id);
+  const list = giftList.value
+  const i = list.findIndex(x => x.id === b.id)
   if (i >= 0) {
-    list[i] = b;
+    list[i] = b
   } else {
-    list.push(b);
+    list.push(b)
   }
-  const max = giftMaxRows();
+  const max = giftMaxRows()
   if (list.length > max) {
-    list.splice(0, list.length - max);
+    list.splice(0, list.length - max)
   }
 }
 
@@ -114,119 +113,112 @@ function upsertGift(b: DisplayBacking) {
 function markRoomMedal<T extends { medal_room_id?: number }>(d: T): T & { isRoomMedal: boolean } {
   return {
     ...d,
-    isRoomMedal:
-      d.medal_room_id !== undefined &&
-      currentRoomId.value !== 0 &&
-      d.medal_room_id === currentRoomId.value,
-  };
+    isRoomMedal: d.medal_room_id !== undefined && currentRoomId.value !== 0 && d.medal_room_id === currentRoomId.value,
+  }
 }
 
 /** 礼物区行数上限（至少 1，防止配置被改成 0 时列表全空） */
 function giftMaxRows(): number {
-  return Math.max(1, giftCfg.value.max_rows);
+  return Math.max(1, giftCfg.value.max_rows)
 }
 
 // 调小「最多显示条数」时立刻裁掉多出来的行，否则要等下一条礼物才生效
-watch(giftMaxRows, (max) => {
-  const list = giftList.value;
+watch(giftMaxRows, max => {
+  const list = giftList.value
   if (list.length > max) {
-    list.splice(0, list.length - max);
+    list.splice(0, list.length - max)
   }
-});
+})
 
-let unlistenDanmu: UnlistenFn | undefined;
-let unlistenRoom: UnlistenFn | undefined;
-let unlistenStyle: UnlistenFn | undefined;
-let unlistenFilter: UnlistenFn | undefined;
-let unlistenGift: UnlistenFn | undefined;
-let unlistenGiftCfg: UnlistenFn | undefined;
+let unlistenDanmu: UnlistenFn | undefined
+let unlistenRoom: UnlistenFn | undefined
+let unlistenStyle: UnlistenFn | undefined
+let unlistenFilter: UnlistenFn | undefined
+let unlistenGift: UnlistenFn | undefined
+let unlistenGiftCfg: UnlistenFn | undefined
 
 /// 弹幕过滤判定：
 /// 身份规则（舰长/房管、有粉丝牌、荣耀等级）为「或」关系——任一开启的规则命中即显示；
 /// 身份规则全关 = 不过滤；敏感词屏蔽独立叠加——开关开启且命中词表时整条丢弃（不豁免）。
 function shouldShowDanmaku(d: DanmakuEvent, f: DanmakuFilter): boolean {
-  if (
-    f.enable_sensitive &&
-    f.sensitive_words.some((w) => w && d.content.toLowerCase().includes(w.toLowerCase()))
-  ) {
-    return false;
+  if (f.enable_sensitive && f.sensitive_words.some(w => w && d.content.toLowerCase().includes(w.toLowerCase()))) {
+    return false
   }
-  const anyIdentityOn =
-    f.enable_guard_admin || f.enable_medal || f.enable_wealth;
-  if (!anyIdentityOn) return true;
+  const anyIdentityOn = f.enable_guard_admin || f.enable_medal || f.enable_wealth
+  if (!anyIdentityOn) return true
   return (
     (f.enable_guard_admin && (d.is_admin || (d.guard_level ?? 0) >= 1)) ||
     (f.enable_medal && (d.medal_level ?? 0) > 0) ||
     (f.enable_wealth && (d.wealth_level ?? 0) >= f.wealth_min)
-  );
+  )
 }
 
 onMounted(async () => {
-  unlistenRoom = await listen<RoomStatusEvent>("room-status", (e) => {
-    applyConnStatus(e.payload);
-  });
-  unlistenDanmu = await listen<DanmakuEvent>("danmaku", (e) => {
-    const d = e.payload as DisplayDanmaku;
+  unlistenRoom = await listen<RoomStatusEvent>('room-status', e => {
+    applyConnStatus(e.payload)
+  })
+  unlistenDanmu = await listen<DanmakuEvent>('danmaku', e => {
+    const d = e.payload as DisplayDanmaku
     // 过滤：不满足配置规则（敏感词命中/身份不匹配）的弹幕整条丢弃
     if (!shouldShowDanmaku(d, filter.value)) {
-      return;
+      return
     }
-    pushDanmaku(markRoomMedal(d));
-  });
-  unlistenGift = await listen<BackingEvent>("gift", (e) => {
-    upsertGift(markRoomMedal(e.payload));
-  });
-  unlistenGiftCfg = await listen<GiftConfig>("gift-config", (e) => {
-    giftCfg.value = e.payload;
-  });
-  unlistenStyle = await listen<OverlayStyle>("overlay-style", (e) => {
-    style.value = e.payload;
-  });
-  unlistenFilter = await listen<DanmakuFilter>("danmaku-filter", (e) => {
-    filter.value = e.payload;
-  });
+    pushDanmaku(markRoomMedal(d))
+  })
+  unlistenGift = await listen<BackingEvent>('gift', e => {
+    upsertGift(markRoomMedal(e.payload))
+  })
+  unlistenGiftCfg = await listen<GiftConfig>('gift-config', e => {
+    giftCfg.value = e.payload
+  })
+  unlistenStyle = await listen<OverlayStyle>('overlay-style', e => {
+    style.value = e.payload
+  })
+  unlistenFilter = await listen<DanmakuFilter>('danmaku-filter', e => {
+    filter.value = e.payload
+  })
   // 初始同步样式
   try {
-    style.value = await invoke<OverlayStyle>("overlay_get_style");
+    style.value = await invoke<OverlayStyle>('overlay_get_style')
   } catch {
     /* ignore */
   }
   // 强制触发字体渲染重计算，避免首次加载时字体像素化
-  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))
   // 初始同步过滤配置
   try {
-    filter.value = await invoke<DanmakuFilter>("danmaku_get_filter");
+    filter.value = await invoke<DanmakuFilter>('danmaku_get_filter')
   } catch {
     /* ignore */
   }
   // 初始同步礼物列表配置（条数上限）
   try {
-    giftCfg.value = await invoke<GiftConfig>("gift_get_config");
+    giftCfg.value = await invoke<GiftConfig>('gift_get_config')
   } catch {
     /* ignore */
   }
   // 轮询兑底：事件丢失时也能同步连接状态（每 2s）
   const poll = async () => {
     try {
-      const st = await invoke<RoomStatusEvent>("get_connection_status");
-      applyConnStatus(st);
+      const st = await invoke<RoomStatusEvent>('get_connection_status')
+      applyConnStatus(st)
     } catch {
       /* overlay 独立打开等场景忽略 */
     }
-  };
-  await poll();
-  const timer = setInterval(poll, 2000);
-  onUnmounted(() => clearInterval(timer));
-});
+  }
+  await poll()
+  const timer = setInterval(poll, 2000)
+  onUnmounted(() => clearInterval(timer))
+})
 
 onUnmounted(() => {
-  unlistenDanmu?.();
-  unlistenRoom?.();
-  unlistenStyle?.();
-  unlistenFilter?.();
-  unlistenGift?.();
-  unlistenGiftCfg?.();
-});
+  unlistenDanmu?.()
+  unlistenRoom?.()
+  unlistenStyle?.()
+  unlistenFilter?.()
+  unlistenGift?.()
+  unlistenGiftCfg?.()
+})
 </script>
 
 <template>
@@ -237,8 +229,7 @@ onUnmounted(() => {
       fontFamily: style.font_family,
       rowGap: style.row_gap + 'px',
     }"
-    data-tauri-drag-region
-  >
+    data-tauri-drag-region>
     <!-- 常驻透明拖拽条：不在弹幕流内，弹幕高速刷新时也能稳定拖动窗口；移入时显示操作提示 -->
     <div class="drag-strip" data-tauri-drag-region>
       <span class="drag-hint">按住此区域可拖动弹幕窗位置</span>
@@ -253,12 +244,7 @@ onUnmounted(() => {
       </div>
       <!-- 弹幕区：自带裁剪的独立容器，礼物区不会被高频弹幕顶出可视区 -->
       <div class="danmaku-area">
-        <DanmakuRow
-          v-for="d in danmakuList"
-          :key="d.id"
-          :d="d"
-          :overlay-style="style"
-        />
+        <DanmakuRow v-for="d in danmakuList" :key="d.id" :d="d" :overlay-style="style" />
       </div>
     </div>
   </div>
