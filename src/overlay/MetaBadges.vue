@@ -3,18 +3,19 @@ import type { OverlayStyle } from '../types/ipc'
 
 // 弹幕行 / 礼物行共用的身份徽章区：身份前缀（房管 / 舰长）+ 荣耀等级 + 粉丝牌。
 // 单独成组件是为了让两区共用同一套列宽（role-slot 4.8em）——复制一份 CSS 后
-// 只改单侧，就会与发送弹幕框的缩进错位（见 window.rs 的 sender_layout_metrics）。
+// 只改单侧，两区的正文列就不在同一竖线上（role-slot 也决定 OverlayApp 的 --role-indent）。
+//
+// 粉丝牌由调用方以 medal 对象传入，不传就不渲染：弹幕行组装后传入，
+// 礼物行不传（打赏行已有用户名与礼物名，粉丝牌只挤占横向空间）。
 const props = defineProps<{
   /** 是否房管（礼物事件拿不到该字段，恒传 false） */
   isAdmin: boolean
   /** 舰队等级：3 舰长 / 2 提督 / 1 总督 */
   guardLevel?: number
-  medalName?: string
-  medalLevel?: number
-  /** 粉丝牌是否来自当前房间（决定本房牌绿 / 其它房牌灰的配色） */
-  isRoomMedal: boolean
   /** 荣耀等级（全站财富等级） */
   wealthLevel?: number
+  /** 粉丝牌；不传 = 不渲染（礼物行就是这个情况）。isRoom 决定本房牌绿 / 其它房牌灰 */
+  medal?: { name: string; level: number; isRoom: boolean }
   overlayStyle: OverlayStyle
 }>()
 
@@ -53,11 +54,8 @@ function rolesOf(): { label: string; cls: string }[] {
     <template v-if="overlayStyle.show_wealth && wealthLevel && wealthLevel > 0">
       <span class="chip lv">LV{{ wealthLevel }}</span>
     </template>
-    <template v-if="overlayStyle.show_medal && medalName && isRoomMedal">
-      <span class="chip medal-room">{{ medalName }}{{ medalLevel ?? 0 }}</span>
-    </template>
-    <template v-else-if="overlayStyle.show_medal && medalName">
-      <span class="chip medal-other">{{ medalName }}{{ medalLevel ?? 0 }}</span>
+    <template v-if="medal && overlayStyle.show_medal">
+      <span class="chip" :class="medal.isRoom ? 'medal-room' : 'medal-other'">{{ medal.name }}{{ medal.level }}</span>
     </template>
   </span>
 </template>

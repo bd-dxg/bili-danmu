@@ -11,7 +11,7 @@
 - 解析：`parser.rs` 把 `SEND_GIFT` / `COMBO_SEND` / `SUPER_CHAT_MESSAGE` / `GUARD_BUY` 解成 `BilibiliEvent::Backing`；金额统一折算成整数「分」（`amount_fen`，金瓜子 1000 = 1 元），免费礼物（银瓜子 / 零价）直接返回 None
 - `COMBO_SEND` **只当连击仍在继续的信号**（延长合并窗口），数量与金额一律以 `SEND_GIFT` 为准——两路事件同时下发，两边都计就重复；它是否带价格字段未实测（用 `scripts/ws-probe.ps1` 验证）
 - 门槛与连击合并都在 Rust（`gift::on_backing`）：门槛按**累加后的总额**判定，未过门槛的连击先攒在分组里；同人同礼物在 `combo_window_secs` 内合并成一行，行 id = 分组键 + 首次时间戳，前端按 id **覆盖**更新（位置不变）
-- 渲染：`GiftRow.vue` + `MetaBadges.vue`。徽章列抽成 `MetaBadges` 是**故意共用**的——`role-slot` 宽度与发送框缩进（`window.rs` `sender_layout_metrics`）同源，复制一份 CSS 后改单侧就会错位；`row-style.ts` 同理（两行共用描边计算）
+- 渲染：`GiftRow.vue` + `MetaBadges.vue`。徽章列抽成 `MetaBadges` 是**故意共用**的——`role-slot` 宽度与 `--role-indent` / 发送框左缩进（`window.rs` `sender_layout_metrics`）同源，复制一份 CSS 后改单侧就会错位；`row-style.ts` 同理（两行共用描边计算）。**礼物行不显示粉丝牌**：粉丝牌由弹幕行组装成 `medal` 对象传入，礼物行不传就不渲染（打赏行已有用户名与礼物名）；打赏事件（`Backing`）因此不再下发 `medal_*` 字段，前端也不再有 `DisplayBacking`，礼物行直接用 `BackingEvent`
 - 设置项在「主播分区 → 礼物渲染」标签：开关 / 金额门槛 / 条数上限 / 合并窗口
 - 礼物朗读（`tts/gift.rs` + `tts::on_backing`）：文案「感谢老板A送的5个辣条」/ SC 念留言正文（超 50 字截断）/ 上舰念档位；**插队**走 `TtsState::push_front`（排到待朗读弹幕之前），语义是「当前这条念完马上接」，**不**掐正在念的那条
 - 礼物朗读**自己**按「用户 + 礼物」累加一遍，**不复用** `gift.rs` 的分组表：渲染侧只在过渲染门槛时才产出累计行，而朗读门槛与它独立（`GiftTtsConfig`，可更低）；连击静默满一个窗口才念一次，窗口沿用 `GiftConfig::combo_window_secs`（`tts::combo_window` 真接读 `OverlayState.gift`，改窗口只需改一处）；定时器是常驻轮询任务（`spawn_gift_timer`，1 秒一跳：按窗口整跳会让汇总最多晚一个窗口）
@@ -72,11 +72,11 @@
 
 - 禁止提交：`node_modules/`、`dist/`、`src-tauri/target/`、`src-tauri/gen/schemas/`、`Task/`、`dev.log`、根目录截图（`.gitignore` 已配）
 - 弹幕必须登录态：B 站 2025+ 不向游客推送 `DANMU_MSG`，游客级 token 只是登录路径失败时的兜底（能连上但收不到弹幕）。登录 Cookie 本地持久化；改动协议时用 `scripts/ws-probe.ps1` 验证
-- 弹幕窗口性能敏感（120 条上限、透明层重绘），前端改动注意不要引入高频重排
+- 弹幕窗口性能敏感（120 条上限、透明层重绘），前端改动注意不要引入高频重排；入场动画（`overlay.css` 的 `.row-enter`）只动 `transform` / `opacity`（合成层）且只在新节点挂载时播一次——**不要**给行加 `will-change`（120 行会常驻独立图层），也不要改成逐帧改 height / margin 的效果（每帧重排）
 - 登录 Cookie 在 `config.rs` 的 `save_config_unlocked`（唯一写盘边界）统一 **DPAPI 加密**（`dpapi:` 前缀 + hex）落盘，加解密在 `config/crypto.rs`，读取自动解密（旧版明文无前缀兼容）：任何新增的敏感字段必须走同类加密，勿明文落盘；内存态保持明文
 - `config.rs` 读写持有全局互斥（save_* 均为 load-modify-save）：新增保存函数须沿用 `lock_cfg()` + `*_unlocked` 模式，勿在持锁时调用加锁公共入口（std Mutex 不可重入）
 - 断线自动重连在 `connection.rs` `spawn_connection`（1/2/4/…/30s 退避、10 次上限）；改连接收尾逻辑时保留取消令牌身份检查（`finish_connection`），否则旧任务会误清新连接状态
-- 发送弹幕需登录态（`bili_jct` 做 CSRF 签名，游客无 bili_jct 会报错）；发送框窗口始终吸附 Overlay 下方（`window.rs` `sync_sender_docked`），缩进/宽度/高度随弹幕字号缩放——改动 Overlay 布局（`role-slot` 宽度、容器 padding）时须同步 `sender_layout_metrics` 的缩进系数，否则发送框与弹幕正文列错位
+- 发送弹幕需登录态（`bili_jct` 做 CSRF 签名，游客无 bili_jct 会报错）；发送框窗口始终吸附 Overlay 下方（`window.rs` `sync_sender_docked`），**左端与面板背景左边缘同一条线**（6px padding + `--panel-inset` 5.15em，不再对齐正文列）、**宽度取面板宽度的 80%**、高度随弹幕字号缩放——改 Overlay 布局（容器 padding、`--role-indent` / `--panel-inset`）时须同步 `sender_layout_metrics` 里的这几个系数
 - 朗读与显示是**两套独立的 `DanmakuFilter`**（`danmaku_filter` / `tts.filter`）：显示筛选在前端 Overlay 做，朗读筛选在 Rust `tts::on_danmaku` 做，改任一侧别把两者耦合成一份配置
 - `src/styles/settings.css` 是**全局样式**（无 scoped），类名是主窗口所有页面的共用契约：往里加规则前先确认不和已有页面的类名撞车（`StatusDashboard` 的 `.tip` 就因此改名 `.dashboard-tip`）；页面独有的差异项（如 `.select` 的 min-width）留在各自组件的 scoped 样式里覆盖
 - `DisplayDanmaku`（弹幕事件 + `isRoomMedal` 派生标记）定义在 `types/ipc.ts`，Overlay 列表与 `DanmakuRow` 共用

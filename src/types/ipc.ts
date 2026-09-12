@@ -61,18 +61,9 @@ export interface BackingEvent {
   timestamp: number
   /** 醒目留言正文 */
   message?: string
-  // ---- 用户身份（供礼物行复用弹幕的徽章区） ----
-  medal_level?: number
-  medal_name?: string
-  medal_room_id?: number
+  // ---- 用户身份（礼物行只用身份前缀与荣耀等级） ----
   guard_level?: number
   wealth_level?: number
-}
-
-/** Overlay 礼物行数据：打赏事件 + 展示所需的派生标记 */
-export interface DisplayBacking extends BackingEvent {
-  /** 粉丝牌来自当前房间（决定本房牌绿 / 其它房牌灰的配色） */
-  isRoomMedal: boolean
 }
 
 /** 礼物列表配置（Rust ↔ Vue，事件名 gift-config） */

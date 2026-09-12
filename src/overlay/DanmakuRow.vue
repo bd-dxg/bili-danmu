@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
 import MetaBadges from './MetaBadges.vue'
 import { rowShadow } from './row-style'
 
@@ -7,21 +9,26 @@ import type { DisplayDanmaku, OverlayStyle } from '../types/ipc'
 // 单条弹幕行：徽章区（MetaBadges，与礼物行共用）+ 正文区。
 // 行内样式全部来自 OverlayStyle（由 OverlayApp 统一下发），字号/行距等继承
 // 弹幕窗根节点，故这里只处理描边与文字颜色。描边计算与礼物行共用 row-style.ts。
-defineProps<{
+const props = defineProps<{
   d: DisplayDanmaku
   overlayStyle: OverlayStyle
 }>()
+
+/** 粉丝牌展示数据；未佩戴粉丝牌时为 undefined（MetaBadges 据此跳过渲染） */
+const medal = computed(() =>
+  props.d.medal_name
+    ? { name: props.d.medal_name, level: props.d.medal_level ?? 0, isRoom: props.d.isRoomMedal }
+    : undefined,
+)
 </script>
 
 <template>
-  <div class="danmu-row" :style="{ textShadow: rowShadow(overlayStyle) }" data-tauri-drag-region>
+  <div class="danmu-row row-enter" :style="{ textShadow: rowShadow(overlayStyle) }" data-tauri-drag-region>
     <MetaBadges
       :is-admin="d.is_admin"
       :guard-level="d.guard_level"
-      :medal-name="d.medal_name"
-      :medal-level="d.medal_level"
-      :is-room-medal="d.isRoomMedal"
       :wealth-level="d.wealth_level"
+      :medal="medal"
       :overlay-style="overlayStyle" />
     <!-- 正文区：用户名 + 内容，超宽在此区内折行（续行与首行正文同列） -->
     <span class="msg">

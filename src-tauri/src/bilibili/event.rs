@@ -76,16 +76,7 @@ pub struct Backing {
     /// 醒目留言正文
     #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
-    // ---- 用户身份（与 Danmaku 同构，供礼物行复用弹幕的名牌列） ----
-    /// 粉丝勋章等级（0/None = 未佩戴）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub medal_level: Option<u32>,
-    /// 粉丝勋章名
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub medal_name: Option<String>,
-    /// 勋章所属房间 ID（等于当前直播间 ID = 主播自己的牌子）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub medal_room_id: Option<u32>,
+    // ---- 用户身份（礼物行只用身份前缀与荣耀等级；粉丝牌不下发也不显示） ----
     /// 舰队等级：0 无 / 3 舰长 / 2 提督 / 1 总督
     #[serde(skip_serializing_if = "Option::is_none")]
     pub guard_level: Option<u32>,

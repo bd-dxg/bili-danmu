@@ -10,7 +10,6 @@ import {
   type BackingEvent,
   type DanmakuEvent,
   type DanmakuFilter,
-  type DisplayBacking,
   type DisplayDanmaku,
   type GiftConfig,
   type OverlayStyle,
@@ -21,7 +20,7 @@ import GiftRow from './GiftRow.vue'
 
 const danmakuList = ref<DisplayDanmaku[]>([])
 // 礼物列表：Rust 侧已做完连击合并与金额门槛，这里只负责按 id 覆盖与条数上限
-const giftList = ref<DisplayBacking[]>([])
+const giftList = ref<BackingEvent[]>([])
 const giftCfg = ref<GiftConfig>({ ...DEFAULT_GIFT_CONFIG })
 const currentRoomId = ref(0)
 // 连接状态（空窗时显示初始化提示，避免无界面窗口）
@@ -95,7 +94,7 @@ function pushDanmaku(d: DisplayDanmaku) {
  * 写入一条礼物行：同一连击分组的更新复用同一 id，按 id 覆盖（行位置不变），
  * 超出「礼物区最多显示条数」时丢弃最旧的。
  */
-function upsertGift(b: DisplayBacking) {
+function upsertGift(b: BackingEvent) {
   const list = giftList.value
   const i = list.findIndex(x => x.id === b.id)
   if (i >= 0) {
@@ -109,7 +108,7 @@ function upsertGift(b: DisplayBacking) {
   }
 }
 
-/** 补上「粉丝牌是否来自当前房间」的展示标记（与弹幕行同一判定） */
+/** 补上「粉丝牌是否来自当前房间」的展示标记（决定本房牌绿 / 其它房牌灰） */
 function markRoomMedal<T extends { medal_room_id?: number }>(d: T): T & { isRoomMedal: boolean } {
   return {
     ...d,
@@ -166,7 +165,7 @@ onMounted(async () => {
     pushDanmaku(markRoomMedal(d))
   })
   unlistenGift = await listen<BackingEvent>('gift', e => {
-    upsertGift(markRoomMedal(e.payload))
+    upsertGift(e.payload)
   })
   unlistenGiftCfg = await listen<GiftConfig>('gift-config', e => {
     giftCfg.value = e.payload
@@ -251,10 +250,10 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
-/* 正文列起点：role-slot 4.8em + 0.7em 间距（与 MetaBadges.vue 的 .role-slot、
-   window.rs 的 sender_layout_metrics 三处必须一致）。
+/* 正文列起点：role-slot 4.8em + 0.7em 间距（与 MetaBadges.vue 的 .role-slot 必须一致）。
    面板背景再往左让 0.35em（--panel-inset），正好落在身份前缀列与第一个徽章中间，
-   两边各留 0.35em，荣耀等级 / 粉丝牌不会贴着背景边。 */
+   两边各留 0.35em，荣耀等级 / 粉丝牌不会贴着背景边。
+   --panel-inset 同时是发送弹幕框的左缩进（见 window.rs 的 sender_layout_metrics）。 */
 .overlay-root {
   --role-indent: 5.5em;
   --panel-inset: calc(var(--role-indent) - 0.35em);
