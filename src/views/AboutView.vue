@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { onUnmounted, ref } from 'vue'
+import { getVersion } from '@tauri-apps/api/app'
+import { onMounted, onUnmounted, ref } from 'vue'
+
+import rewardCode from '../assets/reward-code.webp'
+
+// 软件版本号：取自 Tauri 包信息（与 src-tauri/Cargo.toml / tauri.conf.json 同源），
+// 不在前端再抄一份；浏览器里跑（pnpm dev 无 Tauri 注入）时拿不到，徽章自行隐藏
+const version = ref('')
 
 // 仓库地址：页面展示短形式，复制到剪贴板的是带协议的规范 URL（浏览器能直接打开）
 const REPO_LABEL = 'github.com/bd-dxg/bili-danmu'
@@ -24,6 +31,14 @@ async function copyRepoUrl() {
   }
 }
 
+onMounted(async () => {
+  try {
+    version.value = await getVersion()
+  } catch {
+    // 拿不到版本号就不显示徽章，不影响页面其它内容
+  }
+})
+
 onUnmounted(() => {
   if (tipTimer) clearTimeout(tipTimer)
 })
@@ -31,7 +46,13 @@ onUnmounted(() => {
 
 <template>
   <div class="about-page">
-    <h2>关于</h2>
+    <!-- 「关于」包一层 span 是为了让版本徽章与文字之间只隔空白节点：
+         纯空白节点（含换行）会被 Vue 丢掉，而文本节点里的换行会变成一格可见空格，
+         把标题顶出一格。间距交给 .version 的 margin-left。 -->
+    <h2>
+      <span>关于</span>
+      <span v-if="version" class="version">v{{ version }}</span>
+    </h2>
 
     <p class="intro">
       bili-danmu：轻量级 B 站直播弹幕助手。连接直播间，弹幕实时显示在桌面透明悬浮层， 给用 OBS
@@ -60,9 +81,14 @@ onUnmounted(() => {
       </ul>
     </div>
 
-    <div class="card">
-      <h3>技术栈</h3>
-      <p class="stack">Tauri 2 + Vue 3 + TypeScript + Rust，面向 Windows。</p>
+    <div class="card support">
+      <div class="support-text">
+        <h3>支持项目</h3>
+        <p>这个项目的功能都是业余时间开发和维护的：跟进 B 站协议改动、修 bug、加新功能。</p>
+        <p>如果它帮你把直播弹幕看得更顺手，可以扫码支持一下，每份心意都是它继续更新的动力。</p>
+        <p class="wx">微信扫码</p>
+      </div>
+      <img class="reward" :src="rewardCode" alt="微信赞赏码" />
     </div>
   </div>
 </template>
@@ -77,6 +103,14 @@ onUnmounted(() => {
 h2 {
   font-size: 18px;
   margin-bottom: 6px;
+}
+
+/* 版本号徽章：与标题同行，不另占一行（关于页总高要压在内容区内） */
+.version {
+  margin-left: 6px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-faint);
 }
 
 .intro {
@@ -116,12 +150,6 @@ h2 {
   text-decoration: underline;
 }
 
-.stack {
-  font-size: 15px;
-  color: var(--text-dim);
-  line-height: 1.7;
-}
-
 .repo-row {
   display: flex;
   align-items: center;
@@ -157,5 +185,48 @@ h2 {
   font-size: 14px;
   color: var(--red);
   padding-top: 6px;
+}
+
+/* 支持项目：文案在左、赞赏码在右。
+   横向并排而不是上图下文：关于页总高要压在内容区以内（650 高的窗口减去标题栏
+   与 content padding 约 580px），并排时卡片高度只由图决定（220 + 上下 padding）。 */
+.support {
+  display: flex;
+  /* 垂直居中：图 220px 而文案只有三行，顶端对齐时左下角会空一块 */
+  align-items: center;
+  gap: 16px;
+}
+
+.support-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.support p {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text-dim);
+}
+
+/* 「微信扫码」单独成行而不是嵌在句子里：oxfmt 会把段落里与文字相间的行内元素
+   拆到单独一行（无论多短都拆），拆出来的换行会被 Vue 渲染成一个可见空格，
+   结果是「可以 微信扫码 支持一下」。单独占一行就没有这个问题。 */
+.wx {
+  margin-top: 4px;
+  font-weight: 700;
+  color: var(--green);
+}
+
+/* 赞赏码：图片自带白底，加圆角描边，深色主题下不会像一块浮白。
+   这个尺寸（加上卡片 padding 共 240px）是看着页面总高定的：
+   关于页 ≈537px，内容区 ≈578px，留约 40px 余量。 */
+.reward {
+  flex-shrink: 0;
+  width: 220px;
+  height: 220px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  object-fit: contain;
 }
 </style>
