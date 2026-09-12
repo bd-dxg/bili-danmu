@@ -57,7 +57,7 @@
 - 多窗口：根目录 `index.html`（主窗口）+ `overlay.html`（透明悬浮窗）+ `sender.html`（发送弹幕框），Tauri 配置见 `src-tauri/tauri.conf.json` 与 `capabilities/default.json`
 - IPC 双向类型约定：Rust command 与 `src/types/ipc.ts` 保持一致，改动协议时两端同步
 - 注释、commit 一律简体中文；PRD（`prd.md`）已停止维护（见下）
-- 功能状态与规划以 `README.md` 表格为准（未做项：礼物图标、欢迎信息、滚动弹幕、顶弹、用户屏蔽、Windows 系统 TTS、单实例、全局快捷键、开机自启、统一日志）；`prd.md` 仅作历史设计参考，新需求不要再往上写
+- 功能状态与规划以 `README.md` 表格为准（未做项：礼物图标、欢迎信息、滚动弹幕、顶弹、用户屏蔽、Windows 系统 TTS、单实例、全局快捷键、开机自启、统一日志、检查更新 / 自动更新）；`prd.md` 仅作历史设计参考，新需求不要再往上写
 
 ## 版本号与发布
 
