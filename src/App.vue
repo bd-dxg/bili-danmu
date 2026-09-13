@@ -3,13 +3,19 @@ import { onMounted, ref } from 'vue'
 
 import LoginDialog from './components/LoginDialog.vue'
 import { refreshLogin } from './composables/useLogin'
+import { checkUpdate } from './composables/useUpdate'
 import AboutView from './views/AboutView.vue'
 import DanmakuView from './views/DanmakuView.vue'
 import RoomView from './views/RoomView.vue'
 import StreamerView from './views/StreamerView.vue'
 import TtsView from './views/TtsView.vue'
 
-onMounted(refreshLogin)
+onMounted(() => {
+  refreshLogin()
+  // 启动后静默查一次新版本：延后 5s 避开启动时的配置读取与连接流程；
+  // 结果不弹窗，由关于页的版本徽章展示（silent 失败不打扰）
+  setTimeout(() => checkUpdate(true), 5000)
+})
 
 type NavKey = 'room' | 'danmaku' | 'tts' | 'streamer' | 'about'
 

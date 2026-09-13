@@ -35,7 +35,7 @@
 - 前端构建：`pnpm build`
 - 打包桌面应用：`pnpm tauri build`（产物在 `src-tauri/target/release/bundle/nsis/`）
 - 纯 Rust 编译检查：在 `src-tauri/` 下 `cargo check`
-- 纯 Rust 单测：在 `src-tauri/` 下 `cargo test --lib`（含 `--ignored` 的联网测试：Edge TTS 合成、音色列表、突发失败率）
+- 纯 Rust 单测：在 `src-tauri/` 下 `cargo test --lib`（含 `--ignored` 的联网测试：Edge TTS 合成、音色列表、突发失败率、更新检查）
 - PowerShell 辅助脚本：`scripts/`（`ui.ps1` 启动、`ws-probe.ps1` 弹幕协议探测、`edge-tts-probe.ps1` Edge TTS 协议与延迟/音色探测、`gen-icon.ps1` 图标生成）
   - 含中文的 `.ps1` 必须用 `pwsh` 跑（Windows PowerShell 5.1 会按 GBK 解码无 BOM 的 UTF-8 文件，中文被拆坏后连引号都会解析出错）
 
@@ -45,7 +45,7 @@
   - `src/` 前端：
     - `views/` 页面（RoomView 房间、DanmakuView 弹幕、TtsView 朗读、AboutView 关于，后三者均为页内标签式）
     - `components/` 复用组件（`LoginDialog.vue` 登录二维码弹窗、`DanmakuFilterPanel.vue` 弹幕筛选表单（显示/朗读共用）、`StatusDashboard.vue` 运行状态仪表盘、`SettingRow.vue` 设置行、`OverlayWindowPanel.vue` 弹幕窗标签页）
-    - `composables/` 逻辑（`useLogin` 登录态、`useRoomConnection` 连接与最近房间、`useTtsConfig` 朗读配置与音色列表与校验、`useSaveTip` 设置页提示）
+    - `composables/` 逻辑（`useLogin` 登录态、`useRoomConnection` 连接与最近房间、`useTtsConfig` 朗读配置与音色列表与校验、`useSaveTip` 设置页提示、`useUpdate` 更新检查结果）
     - `overlay/OverlayApp.vue` + `overlay/DanmakuRow.vue` 悬浮层入口与单行渲染、`overlay/GiftRow.vue` 礼物行、`overlay/MetaBadges.vue` 两区共用的身份徽章列、`overlay/row-style.ts` 共用的描边计算、`sender/SenderApp.vue` 发送弹幕框入口
     - `styles/settings.css` 全局设置页样式（约束见「注意事项」）、`types/ipc.ts` IPC 类型定义、`overlay.ts` / `sender.ts` 独立入口（对应 `overlay.html` / `sender.html`）
   - `src-tauri/src/` Rust 核心：
@@ -54,10 +54,11 @@
     - `tts/`：`mod.rs` 队列状态与入口钩子（`on_danmaku` / `on_backing`）、`text.rs` 筛选/清洗/组装文案（弹幕与打赏各一个组装函数）、`gift.rs` 礼物朗读的连击聚合与静默窗口、`worker.rs` 合成与播放流水线、`player.rs` winmm MCI 播放、`edge.rs` Edge TTS 协议、`edge/voices.rs` 音色表、`edge/ssml.rs` SSML 构造、`edge/util.rs` 时间与编码工具
     - `config.rs` 配置读写与全局互斥、`config/types.rs` 结构体与默认值、`config/crypto.rs` DPAPI 加解密
     - `gift.rs` 礼物列表：金额门槛与连击合并（唯一判定处，前端只负责按 id 覆盖与条数上限）
+    - `update.rs` 版本更新提醒：请求 GitHub Releases 比对版本（只提醒，不下载安装）、ShellExecuteW 打开下载页
 - 多窗口：根目录 `index.html`（主窗口）+ `overlay.html`（透明悬浮窗）+ `sender.html`（发送弹幕框），Tauri 配置见 `src-tauri/tauri.conf.json` 与 `capabilities/default.json`
 - IPC 双向类型约定：Rust command 与 `src/types/ipc.ts` 保持一致，改动协议时两端同步
 - 注释、commit 一律简体中文；PRD（`prd.md`）已停止维护（见下）
-- 功能状态与规划以 `docs/技术说明.md` 表格为准（未做项：礼物图标、欢迎信息、滚动弹幕、顶弹、用户屏蔽、Windows 系统 TTS、单实例、全局快捷键、开机自启、统一日志、检查更新 / 自动更新）；`README.md` 只写面向用户的产品介绍，技术细节一律放 `docs/技术说明.md`；`prd.md` 仅作历史设计参考，新需求不要再往上写
+- 功能状态与规划以 `docs/技术说明.md` 表格为准（未做项：礼物图标、欢迎信息、滚动弹幕、顶弹、用户屏蔽、Windows 系统 TTS、单实例、全局快捷键、开机自启、统一日志、自动更新）；`README.md` 只写面向用户的产品介绍，技术细节一律放 `docs/技术说明.md`；`prd.md` 仅作历史设计参考，新需求不要再往上写
 
 ## 版本号与发布
 

@@ -14,6 +14,7 @@ mod connection;
 mod gift;
 mod state;
 mod tts;
+mod update;
 mod window;
 
 use state::{AppState, OverlayState};
@@ -234,6 +235,8 @@ pub fn run() {
             commands::get_recent_rooms,
             commands::overlay_get_size,
             commands::overlay_set_size,
+            update::check_update,
+            update::open_url,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

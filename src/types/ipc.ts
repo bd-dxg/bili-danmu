@@ -236,3 +236,13 @@ export const DEFAULT_TTS_CONFIG: TtsConfig = {
   interrupt_on_backlog: true,
   filter: DEFAULT_DANMAKU_FILTER,
 }
+
+/** 更新检查结果（Rust → Vue，命令 check_update） */
+export interface UpdateInfo {
+  /** GitHub Releases 最新版本（tag 去掉 v 前缀） */
+  latest: string
+  /** 最新版本是否比本机新 */
+  has_update: boolean
+  /** 新版本页面地址 */
+  url: string
+}
