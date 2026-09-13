@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { getVersion } from '@tauri-apps/api/app'
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import rewardCode from '../assets/reward-code.webp'
+import { checkUpdate, openUpdatePage, useUpdate } from '../composables/useUpdate'
 
 // 软件版本号：取自 Tauri 包信息（与 src-tauri/Cargo.toml / tauri.conf.json 同源），
 // 不在前端再抄一份；浏览器里跑（pnpm dev 无 Tauri 注入）时拿不到，徽章自行隐藏
@@ -31,6 +32,36 @@ async function copyRepoUrl() {
   }
 }
 
+// ---- 版本更新提醒 ----
+// 结果来自模块级单例（App 启动 5s 后已静默查过一次），这里只负责展示与手动重试
+const { checking, info, error: updateError } = useUpdate()
+
+// 只有手动点过才显示「已是最新」：启动自动检查无结果时不该多一行无用文案
+const checked = ref(false)
+
+const hasUpdate = computed(() => Boolean(info.value?.has_update))
+
+// 一个按钮走完「检查更新 → 检查中… → 发现新版本 / 已是最新 / 重试」全部状态：
+// 不新增一行（关于页总高已接近内容区上限，见 .reward 注释）
+const updateLabel = computed(() => {
+  if (checking.value) return '检查中…'
+  if (updateError.value) return '重试'
+  if (hasUpdate.value) return `发现新版本 v${info.value!.latest}`
+  return checked.value ? '已是最新' : '检查更新'
+})
+
+async function onUpdateClick() {
+  if (hasUpdate.value) {
+    await openUpdatePage()
+    return
+  }
+  checked.value = true
+  await checkUpdate()
+}
+
+// 按钮提示：有新版说明点按去向，失败说明原因——两者都用 hover 提示，不占页面高度
+const updateTitle = computed(() => (hasUpdate.value ? '在浏览器打开下载页' : updateError.value))
+
 onMounted(async () => {
   try {
     version.value = await getVersion()
@@ -52,6 +83,15 @@ onUnmounted(() => {
     <h2>
       <span>关于</span>
       <span v-if="version" class="version">v{{ version }}</span>
+      <!-- 更新提醒与版本徽章同行：关于页放不下额外一行（见 .reward 注释） -->
+      <button
+        class="update-btn"
+        :class="{ 'has-update': hasUpdate }"
+        :disabled="checking"
+        :title="updateTitle"
+        @click="onUpdateClick()">
+        {{ updateLabel }}
+      </button>
     </h2>
 
     <p class="intro">
@@ -228,5 +268,35 @@ h2 {
   border-radius: 8px;
   background: #fff;
   object-fit: contain;
+}
+
+/* 更新按钮：与版本徽章同行，13px 小胶囊不撑高 h2 —— 关于页总高已接近内容区上限。
+   一个按钮承载「检查更新 / 检查中… / 发现新版本 / 已是最新 / 重试」五态（见 updateLabel），
+   避免再添一行提示文字。 */
+.update-btn {
+  margin-left: 8px;
+  padding: 2px 10px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-faint);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.update-btn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.update-btn:disabled {
+  cursor: default;
+}
+
+/* 有新版：换成强调色胶囊，比灰色的「检查更新」显眼 */
+.update-btn.has-update {
+  color: var(--accent-strong-text);
+  background: var(--accent-soft);
+  border-color: var(--accent);
 }
 </style>
