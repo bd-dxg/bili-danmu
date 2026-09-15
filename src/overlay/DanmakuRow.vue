@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 
 import MetaBadges from './MetaBadges.vue'
-import { rowShadow } from './row-style'
+import { rowShadow, shiftHue, WELCOME_HUE_SHIFT } from './row-style'
 
 import type { DisplayDanmaku, OverlayStyle } from '../types/ipc'
 
@@ -28,8 +28,14 @@ const medal = computed(() =>
  * 礼物行的用户名、欢迎行会一起变，不用为它单独配一个颜色。
  * 与弹幕正文的区分靠 `▸` 前缀 + 色相，不靠降低亮度（弹幕窗背景多是游戏画面，降亮度会糊）。
  */
+/**
+ * 正文颜色：欢迎信息行从「用户名颜色」偏移色相派生，其余跟随正文颜色
+ *
+ * 为什么不直接沿用「用户名颜色」：那样和弹幕用户名完全同色，丢了区分度。
+ * 为什么不降亮度：弹幕窗背景多是游戏画面，降亮度会直接糊。只动色相才兼顾两者。
+ */
 const contentColor = computed(() =>
-  props.d.isWelcome ? props.overlayStyle.username_color : props.overlayStyle.content_color,
+  props.d.isWelcome ? shiftHue(props.overlayStyle.username_color, WELCOME_HUE_SHIFT) : props.overlayStyle.content_color,
 )
 </script>
 
