@@ -126,12 +126,19 @@ pub(super) fn build_backing_text(b: &Backing) -> String {
 
 /// 组装欢迎朗读文案（目前只有舰长进场会走这里）
 ///
-/// 句式与礼物朗读一致（「欢迎」+ 用户名 + 动作）。
-/// 不念舰队档位：它和用户名连读容易被听成名字的一部分（「欢迎舰长舰长甲…」），
-/// 而且只念舰长以上时档位已经在屏幕上、隐含在「为什么会被念」里。
+/// 句式：「欢迎」+ 舰队档位 + 用户名 + 动作。**档位要念**——不念的话听起来就是
+/// 「欢迎某某进入直播间」，主播无法从声音里分出一个总督和一个舰长。
+/// 档位与用户名之间留一个空格（与弹幕朗读的身份前缀同一种做法）：
+/// 不留的话「欢迎舰长舰长甲」会连读成一串。
 /// 用户名清洗后为空时 `spoken_name` 回退「观众」，不会出现缺主语的句子。
 pub(super) fn build_welcome_text(w: &Welcome) -> String {
-    format!("欢迎{}进入直播间", spoken_name(&w.username))
+    let tier = match w.guard_level {
+        Some(3) => "舰长 ",
+        Some(2) => "提督 ",
+        Some(1) => "总督 ",
+        _ => "",
+    };
+    format!("欢迎{tier}{}进入直播间", spoken_name(&w.username))
 }
 
 /// 朗读用的用户名：昵称里的 `_` 同样会被念成「下划线」，先剔噪声；
@@ -230,6 +237,7 @@ fn is_link(token: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::bilibili::event::WelcomeKind;
 
     fn danmaku(content: &str) -> Danmaku {
         Danmaku {
@@ -246,6 +254,35 @@ mod tests {
             wealth_level: None,
             is_admin: false,
         }
+    }
+
+    fn welcome(username: &str, guard_level: Option<u32>) -> Welcome {
+        Welcome {
+            id: "w1".into(),
+            kind: WelcomeKind::GuardEnter,
+            uid: 10086,
+            username: username.into(),
+            timestamp: 0,
+            guard_level,
+        }
+    }
+
+    #[test]
+    fn 欢迎文案要念出舰队档位() {
+        // 不念档位的话听起来就是「欢迎某某进入直播间」，分不出总督和舰长
+        assert_eq!(build_welcome_text(&welcome("老板A", Some(3))), "欢迎舰长 老板A进入直播间");
+        assert_eq!(build_welcome_text(&welcome("老板A", Some(2))), "欢迎提督 老板A进入直播间");
+        assert_eq!(build_welcome_text(&welcome("老板A", Some(1))), "欢迎总督 老板A进入直播间");
+    }
+
+    #[test]
+    fn 欢迎文案缺档位时不念档位() {
+        assert_eq!(build_welcome_text(&welcome("老板A", None)), "欢迎老板A进入直播间");
+    }
+
+    #[test]
+    fn 欢迎文案用户名不可读时回退观众() {
+        assert_eq!(build_welcome_text(&welcome("!!!", Some(3))), "欢迎舰长 观众进入直播间");
     }
 
     #[test]
