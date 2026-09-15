@@ -41,11 +41,28 @@ pub fn load_config(app: &AppHandle) -> ConfigFile {
 fn load_config_unlocked(app: &AppHandle) -> ConfigFile {
     let path = match config_path(app) {
         Ok(p) => p,
-        Err(_) => return ConfigFile::default(),
+        Err(e) => {
+            log::error!("[config] {e}，本次运行用默认配置（改动不会落盘）");
+            return ConfigFile::default();
+        }
     };
-    let mut cfg = match std::fs::read_to_string(path) {
-        Ok(content) => serde_json::from_str(&content).unwrap_or_default(),
-        Err(_) => ConfigFile::default(),
+    let mut cfg = match std::fs::read_to_string(&path) {
+        Ok(content) => match serde_json::from_str(&content) {
+            Ok(c) => c,
+            Err(e) => {
+                log::error!(
+                    "[config] {} 解析失败: {e}，本次运行用默认配置（原文件保留，下次保存会覆盖）",
+                    path.display()
+                );
+                ConfigFile::default()
+            }
+        },
+        // 首次运行没有配置文件是正常路径，不算异常
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => ConfigFile::default(),
+        Err(e) => {
+            log::error!("[config] 读取 {} 失败: {e}，本次运行用默认配置", path.display());
+            ConfigFile::default()
+        }
     };
     // 登录 Cookie 在磁盘上为 DPAPI 加密串，读取后解密为内存明文（旧版无前缀明文直接兼容）；
     // 解密失败（更换系统账户/机器）时清除登录态，避免用坏 Cookie 反复请求
@@ -53,7 +70,7 @@ fn load_config_unlocked(app: &AppHandle) -> ConfigFile {
         match decrypt_cookie(&a.cookies) {
             Ok(plain) => a.cookies = plain,
             Err(e) => {
-                eprintln!(
+                log::warn!(
                     "[config] 登录 Cookie 解密失败（可能更换了系统账户），已清除登录态: {e}"
                 );
                 cfg.auth = None;
@@ -63,8 +80,18 @@ fn load_config_unlocked(app: &AppHandle) -> ConfigFile {
     cfg
 }
 
-/// 先写临时文件再改名落盘，避免中途崩溃留下损坏的配置文件
+/// 保存配置（失败时自己 log：调用方几乎都是 `let _ = save_*()`，
+/// 保存失败不影响主流程，若不在这里记一笔，配置丢了用户和我们都无从得知）
 fn save_config_unlocked(app: &AppHandle, cfg: &ConfigFile) -> Result<(), String> {
+    let r = write_config_file(app, cfg);
+    if let Err(e) = &r {
+        log::error!("[config] 保存失败: {e}");
+    }
+    r
+}
+
+/// 先写临时文件再改名落盘，避免中途崩溃留下损坏的配置文件
+fn write_config_file(app: &AppHandle, cfg: &ConfigFile) -> Result<(), String> {
     let path = config_path(app)?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("创建配置目录失败: {e}"))?;

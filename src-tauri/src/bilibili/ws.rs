@@ -122,6 +122,7 @@ fn handle_frame(app: &tauri::AppHandle, room_id: u32, data: &[u8]) -> Result<(),
                 }
                 // 同步内部状态机（供 get_connection_status / 轮询查询真实状态）
                 crate::state::on_room_connected(app, room_id);
+                log::info!("[bilibili] 房间 {room_id} 认证成功，弹幕会话已建立");
                 // 认证成功：同步状态给前端
                 let _ = app.emit(
                     "room-status",

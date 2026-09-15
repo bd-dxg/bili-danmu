@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { getVersion } from '@tauri-apps/api/app'
+import { invoke } from '@tauri-apps/api/core'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import rewardCode from '../assets/reward-code.webp'
@@ -15,6 +16,7 @@ const REPO_URL = `https://${REPO_LABEL}`
 
 const copied = ref(false)
 const copyError = ref('')
+const logError = ref('')
 let tipTimer: ReturnType<typeof setTimeout> | undefined
 
 // 不用 <a target="_blank">：Tauri 默认不处理 WebView2 的新窗口请求（wry 会直接
@@ -29,6 +31,18 @@ async function copyRepoUrl() {
   } catch {
     // 剪贴板被拒（罕见）：地址本身可选中，退化成手动复制
     copyError.value = '复制失败，请手动选中地址复制'
+  }
+}
+
+// ---- 日志目录 ----
+// 「朗读不出声 / 收不到弹幕」这类问题只能靠日志定位，按钮放在标题行（不另占一行，
+// 关于页总高已接近内容区上限）；目录由 Rust 侧建好后用资源管理器打开。
+async function openLogDir() {
+  logError.value = ''
+  try {
+    await invoke('open_log_dir')
+  } catch (e) {
+    logError.value = String(e)
   }
 }
 
@@ -85,12 +99,19 @@ onUnmounted(() => {
       <span v-if="version" class="version">v{{ version }}</span>
       <!-- 更新提醒与版本徽章同行：关于页放不下额外一行（见 .reward 注释） -->
       <button
-        class="update-btn"
+        class="pill-btn"
         :class="{ 'has-update': hasUpdate }"
         :disabled="checking"
         :title="updateTitle"
         @click="onUpdateClick()">
         {{ updateLabel }}
+      </button>
+      <!-- 日志按钮与更新徽章同行：排障时用户要能自己找到日志文件 -->
+      <button
+        class="pill-btn"
+        :title="logError || '打开日志目录（反馈问题时请附上最新的 bili-danmu.log）'"
+        @click="openLogDir()">
+        日志
       </button>
     </h2>
 
@@ -108,6 +129,7 @@ onUnmounted(() => {
         </button>
       </div>
       <p v-if="copyError" class="repo-error">{{ copyError }}</p>
+      <p v-if="logError" class="repo-error">{{ logError }}</p>
     </div>
 
     <div class="card">
@@ -270,10 +292,10 @@ h2 {
   object-fit: contain;
 }
 
-/* 更新按钮：与版本徽章同行，13px 小胶囊不撑高 h2 —— 关于页总高已接近内容区上限。
-   一个按钮承载「检查更新 / 检查中… / 发现新版本 / 已是最新 / 重试」五态（见 updateLabel），
-   避免再添一行提示文字。 */
-.update-btn {
+/* 页头小胶囊（更新徽章 + 日志按钮）：与版本徽章同行，13px 不撑高 h2 ——
+   关于页总高已接近内容区上限。更新按钮一个按钮承载「检查更新 / 检查中… /
+   发现新版本 / 已是最新 / 重试」五态（见 updateLabel），避免再添一行提示文字。 */
+.pill-btn {
   margin-left: 8px;
   padding: 2px 10px;
   font-size: 13px;
@@ -284,17 +306,17 @@ h2 {
   border-radius: 999px;
 }
 
-.update-btn:hover:not(:disabled) {
+.pill-btn:hover:not(:disabled) {
   color: var(--text);
   border-color: var(--accent);
 }
 
-.update-btn:disabled {
+.pill-btn:disabled {
   cursor: default;
 }
 
 /* 有新版：换成强调色胶囊，比灰色的「检查更新」显眼 */
-.update-btn.has-update {
+.pill-btn.has-update {
   color: var(--accent-strong-text);
   background: var(--accent-soft);
   border-color: var(--accent);

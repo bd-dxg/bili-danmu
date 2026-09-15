@@ -5,7 +5,7 @@
 //! 登录：B 站 2025+ 要求登录态才推送弹幕，扫码登录后 cookie 持久化于本地配置
 //!
 //! 模块分工：状态见 `state.rs`，IPC 命令见 `commands.rs`，连接与重连见 `connection.rs`，
-//! 窗口辅助见 `window.rs`，本文件只做组装（状态托管、窗口创建、托盘、命令注册）。
+//! 窗口辅助见 `window.rs`；本文件只做组装（状态托管、日志插件、窗口创建、托盘、命令注册）。
 
 mod bilibili;
 mod commands;
@@ -38,6 +38,30 @@ pub fn run() {
                 let _ = w.set_focus();
             }
         }))
+        // 统一日志：level / 落盘目录 / 轮转策略都在这里定，业务代码只调 log::* 宏
+        //
+        // 默认 max_file_size 只有 40KB 且 KeepOne（超限即丢旧文件），对「出事翻日志」
+        // 毫无用处，故放大到 5MB 并保留最近 7 份（轮转出的旧文件会带上日期后缀）。
+        // 时区必须显式切本地时间：默认 UTC，国内用户对着日志还原现场会差 8 小时。
+        // release 是 windows_subsystem = "windows"，没有可用的 stdout，只挂 LogDir；
+        // dev 额外挂 Stdout，保留 `pnpm tauri dev` 的终端输出。
+        .plugin({
+            let mut targets = vec![tauri_plugin_log::Target::new(
+                tauri_plugin_log::TargetKind::LogDir { file_name: None },
+            )];
+            if cfg!(debug_assertions) {
+                targets.push(tauri_plugin_log::Target::new(
+                    tauri_plugin_log::TargetKind::Stdout,
+                ));
+            }
+            tauri_plugin_log::Builder::new()
+                .targets(targets)
+                .level(log::LevelFilter::Info)
+                .max_file_size(5 * 1024 * 1024)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(7))
+                .timezone_strategy(tauri_plugin_log::TimezoneStrategy::UseLocal)
+                .build()
+        })
         .manage(AppState {
             status: Mutex::new(state::RoomStatus::Disconnected),
             cancel: Mutex::new(None),
@@ -53,9 +77,9 @@ pub fn run() {
             if let Some(auth) = &cfg.auth {
                 let st = app.state::<AppState>();
                 *st.auth.lock().unwrap() = Some(auth.clone());
-                eprintln!("[auth] 已恢复登录态 uid={}", auth.uid);
+                log::info!("[auth] 已恢复登录态 uid={}", auth.uid);
             } else {
-                eprintln!("[auth] 未登录（游客态收不到弹幕，请扫码登录）");
+                log::info!("[auth] 未登录（游客态收不到弹幕，请扫码登录）");
             }
             {
                 let ov = app.state::<OverlayState>();
@@ -69,10 +93,10 @@ pub fn run() {
             app.state::<tts::TtsState>()
                 .set_gift_config(cfg.gift_tts.clone());
             if cfg.gift_tts.enabled {
-                eprintln!("[tts] 已恢复礼物朗读开关，门槛={} 元", cfg.gift_tts.min_amount_yuan);
+                log::info!("[tts] 已恢复礼物朗读开关，门槛={} 元", cfg.gift_tts.min_amount_yuan);
             }
             if cfg.tts.enabled {
-                eprintln!("[tts] 已恢复朗读开关，音色={}", cfg.tts.voice);
+                log::info!("[tts] 已恢复朗读开关，音色={}", cfg.tts.voice);
             }
             tts::spawn_worker(app.handle().clone());
 
@@ -108,7 +132,7 @@ pub fn run() {
                     }
                 });
             } else {
-                eprintln!("[overlay] 创建失败");
+                log::error!("[overlay] 创建失败");
             }
             // 周期落盘窗口位置（拖动/缩放中去重保存）
             let app3 = app.handle().clone();
@@ -136,7 +160,7 @@ pub fn run() {
             .skip_taskbar(true)
             .shadow(false);
             if sender_builder.build().is_err() {
-                eprintln!("[sender] 创建失败");
+                log::error!("[sender] 创建失败");
             }
             // 创建后立即对齐到弹幕窗下方（覆盖默认位置/尺寸）
             sync_sender_docked(app.handle());
@@ -154,10 +178,10 @@ pub fn run() {
 
             // 系统托盘：左键单击显示设置窗口
             let show_item = MenuItem::with_id(app, "show", "显示设置", true, None::<&str>)
-                .map_err(|e| eprintln!("[tray] 创建菜单项失败: {e}"))
+                .map_err(|e| log::error!("[tray] 创建菜单项失败: {e}"))
                 .ok();
             let quit_item = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)
-                .map_err(|e| eprintln!("[tray] 创建菜单项失败: {e}"))
+                .map_err(|e| log::error!("[tray] 创建菜单项失败: {e}"))
                 .ok();
             let mut items: Vec<&dyn tauri::menu::IsMenuItem<_>> = Vec::new();
             if let Some(i) = &show_item {
@@ -207,7 +231,7 @@ pub fn run() {
                         }
                     })
                     .build(app)
-                    .map_err(|e| eprintln!("[tray] 创建托盘失败: {e}"))
+                    .map_err(|e| log::error!("[tray] 创建托盘失败: {e}"))
                     .ok();
                 let _ = tray; // 托盘由 tauri 管理，持有即保活
             }
@@ -247,6 +271,7 @@ pub fn run() {
             commands::overlay_set_size,
             update::check_update,
             update::open_url,
+            commands::open_log_dir,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

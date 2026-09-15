@@ -78,7 +78,7 @@ pub fn decode_stream(buf: &[u8]) -> Result<Vec<Packet>, String> {
         if total < HEADER_LEN || off + total > buf.len() {
             // 尾部数据不完整（B 站按包发送，正常不会出现）：记录并丢弃，
             // 不静默吞掉——若频繁出现说明协议行为已变化，便于排查
-            eprintln!("[protocol] 帧尾含不完整/畸形包，丢弃 {} 字节", buf.len() - off);
+            log::warn!("[protocol] 帧尾含不完整/畸形包，丢弃 {} 字节", buf.len() - off);
             break;
         }
         out.push(decode_packet(&buf[off..off + total])?);

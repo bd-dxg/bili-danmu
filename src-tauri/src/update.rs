@@ -86,11 +86,14 @@ pub(crate) fn open_url(url: String) -> Result<(), String> {
     if !url.starts_with("https://") && !url.starts_with("http://") {
         return Err("只允许打开 http(s) 链接".into());
     }
-    open_external(&url)
+    open_in_shell(&url)
 }
 
-/// 用 shell 打开链接（Windows 专属，与 player.rs 直接用 windows-sys 的做法一致）
-fn open_external(url: &str) -> Result<(), String> {
+/// 用 shell 打开路径或链接（Windows 专属，与 player.rs 直接用 windows-sys 的做法一致）
+///
+/// 链接之外也供 `commands::open_log_dir` 打开本地目录：两者都走系统默认关联程序
+/// （目录即资源管理器），不需要额外分支。
+pub(crate) fn open_in_shell(url: &str) -> Result<(), String> {
     use windows_sys::Win32::UI::Shell::ShellExecuteW;
     use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
 
@@ -108,7 +111,7 @@ fn open_external(url: &str) -> Result<(), String> {
     };
     // 返回值 ≤32 表示失败（SE_ERR_* 系列，是给 16 位兼容留的约定），成功返回 HINSTANCE
     if (ret as isize) <= 32 {
-        return Err(format!("打开浏览器失败(code={})", ret as isize));
+        return Err(format!("打开失败(code={})", ret as isize));
     }
     Ok(())
 }

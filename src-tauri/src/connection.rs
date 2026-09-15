@@ -98,7 +98,7 @@ fn spawn_connection(app: AppHandle, short_id: u32, cancel: CancellationToken) {
             }
         };
         if resolved.live_status == 0 {
-            eprintln!(
+            log::warn!(
                 "[room] 房间 {} ({}) 当前未开播，仍尝试连接",
                 short_id, resolved.room_id
             );
@@ -115,7 +115,7 @@ fn spawn_connection(app: AppHandle, short_id: u32, cancel: CancellationToken) {
                 // 退避等待（可取消）
                 let backoff = (1u64 << attempt.saturating_sub(1).min(5))
                     .min(RECONNECT_MAX_BACKOFF_SECS);
-                eprintln!("[bilibili] 会话断开，{backoff}s 后重连（第 {attempt} 次）");
+                log::warn!("[bilibili] 会话断开，{backoff}s 后重连（第 {attempt} 次）");
                 tokio::select! {
                     _ = tokio::time::sleep(std::time::Duration::from_secs(backoff)) => {}
                     _ = cancel.cancelled() => break Ok(()),
@@ -194,7 +194,7 @@ fn finish_connection(app: &AppHandle, cancel: &CancellationToken, result: Result
             let _ = app.emit("room-status", json!({ "state": "disconnected" }));
         }
         Err(msg) => {
-            eprintln!("[bilibili] 连接结束: {msg}");
+            log::error!("[bilibili] 连接结束: {msg}");
             let _ = app.emit("room-status", json!({ "state": "error", "message": msg }));
         }
     }
