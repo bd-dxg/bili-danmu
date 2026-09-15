@@ -96,19 +96,24 @@ function pushDanmaku(d: DisplayDanmaku) {
 /** 舰队档位名（guard_level：3 舰长 / 2 提督 / 1 总督） */
 const GUARD_LABEL: Record<number, string> = { 0: '大航海', 1: '总督', 2: '提督', 3: '舰长' }
 
-/** 欢迎信息文案 */
+/**
+ * 欢迎信息文案：`▸` 前缀让它在弹幕里一眼可辨
+ *
+ * 文字颜色改成与弹幕同亮度的淡青后，层次靠色相；再给个前缀符号，
+ * 即使有人把弹幕正文色也改成青色也能分得出来。
+ */
 function welcomeText(w: WelcomeEvent): string {
   switch (w.kind) {
     case 'enter':
-      return `${w.username} 进入直播间`
+      return `▸ ${w.username} 进入直播间`
     case 'follow':
-      return `${w.username} 关注了直播间`
+      return `▸ ${w.username} 关注了直播间`
     case 'share':
-      return `${w.username} 分享了直播间`
+      return `▸ ${w.username} 分享了直播间`
     case 'like':
-      return `${w.username} 点赞了直播间`
+      return `▸ ${w.username} 点赞了直播间`
     default:
-      return `${w.username} 乘坐${GUARD_LABEL[w.guard_level ?? 0]}进入直播间`
+      return `▸ ${w.username} 乘坐${GUARD_LABEL[w.guard_level ?? 0]}进入直播间`
   }
 }
 
