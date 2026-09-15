@@ -15,6 +15,7 @@
 //! 丢掉的欢迎消息不补发——它是「热闹感」，不是必须送达的消息。
 
 use crate::bilibili::event::{Welcome, WelcomeKind};
+use crate::state::OverlayState;
 use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -81,7 +82,12 @@ impl Inner {
 }
 
 /// 处理一条欢迎消息 → 去重限速 → 广播 `welcome` 事件给弹幕窗
+///
+/// 开关为关时直接返回，连去重表都不动。
 pub(crate) fn on_welcome(app: &AppHandle, w: Welcome) {
+    if !app.state::<OverlayState>().welcome.lock().unwrap().enabled {
+        return;
+    }
     // 锁内只判定不广播：emit 是跨 webview 的分发，压在状态锁里迟早把锁序搅乱
     let pass = {
         let st = app.state::<WelcomeState>();

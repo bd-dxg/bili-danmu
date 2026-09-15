@@ -20,6 +20,12 @@ const medal = computed(() =>
     ? { name: props.d.medal_name, level: props.d.medal_level ?? 0, isRoom: props.d.isRoomMedal }
     : undefined,
 )
+
+/** 欢迎信息行的正文颜色：弱化一档 */
+const WELCOME_COLOR = 'rgba(255, 255, 255, 0.7)'
+
+/** 正文颜色：欢迎信息行固定弱化色（它是背景式的热闹感，不该抢弹幕注意力），其余跟随弹幕样式 */
+const contentColor = computed(() => (props.d.isWelcome ? WELCOME_COLOR : props.overlayStyle.content_color))
 </script>
 
 <template>
@@ -45,7 +51,7 @@ const medal = computed(() =>
       <span
         class="content"
         :style="{
-          color: overlayStyle.content_color,
+          color: contentColor,
           fontWeight: overlayStyle.bold ? 700 : 400,
         }">
         {{ d.content }}

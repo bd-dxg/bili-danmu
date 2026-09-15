@@ -4,7 +4,14 @@ import { onMounted, ref } from 'vue'
 
 import SettingRow from '../components/SettingRow.vue'
 import { useSaveTip } from '../composables/useSaveTip'
-import { DEFAULT_GIFT_CONFIG, DEFAULT_GIFT_TTS_CONFIG, type GiftConfig, type GiftTtsConfig } from '../types/ipc'
+import {
+  DEFAULT_GIFT_CONFIG,
+  DEFAULT_GIFT_TTS_CONFIG,
+  DEFAULT_WELCOME_CONFIG,
+  type GiftConfig,
+  type GiftTtsConfig,
+  type WelcomeConfig,
+} from '../types/ipc'
 
 // 页内标签：gift / giftTts / welcome
 const tab = ref<'gift' | 'giftTts' | 'welcome'>('gift')
@@ -13,6 +20,8 @@ const tab = ref<'gift' | 'giftTts' | 'welcome'>('gift')
 const gift = ref<GiftConfig>({ ...DEFAULT_GIFT_CONFIG })
 // 礼物朗读配置：开关与门槛独立于弹幕朗读与礼物区显示
 const giftTts = ref<GiftTtsConfig>({ ...DEFAULT_GIFT_TTS_CONFIG })
+// 欢迎信息配置（默认关；限流在 Rust 侧，这里只负责开关读写）
+const welcome = ref<WelcomeConfig>({ ...DEFAULT_WELCOME_CONFIG })
 
 const { savedTip, opError, showSaved, showError } = useSaveTip()
 
@@ -40,10 +49,20 @@ async function applyGiftTts() {
   }
 }
 
+async function applyWelcome() {
+  try {
+    await invoke('welcome_set_config', { welcome: { ...welcome.value } })
+    showSaved()
+  } catch (e) {
+    showError(e)
+  }
+}
+
 onMounted(async () => {
   try {
     gift.value = await invoke<GiftConfig>('gift_get_config')
     giftTts.value = await invoke<GiftTtsConfig>('gift_tts_get_config')
+    welcome.value = await invoke<WelcomeConfig>('welcome_get_config')
   } catch (e) {
     console.error('读取礼物配置失败', e)
   }
@@ -136,10 +155,19 @@ onMounted(async () => {
 
     <section v-show="tab === 'welcome'" class="tab-pane">
       <div class="setting-card">
+        <SettingRow label="在弹幕窗显示欢迎信息">
+          <input v-model="welcome.enabled" type="checkbox" class="switch" @change="applyWelcome()" />
+        </SettingRow>
+
         <p class="tip">
-          进房观众 / 上舰 / 关注点赞的欢迎消息：渲染开关、朗读开关、过滤规则（如仅舰长以上、
-          忽略无粉丝牌用户）。功能未实现。
+          收录进房观众 / 关注 / 分享 / 点赞 / 舰长进场五类，渲染成与系统提示同一形态的浅色行。
+          这类事件的量级比弹幕大（实测进房 : 弹幕 1.5 ~ 10 : 1），热度房里限速后只剩 2%
+          左右的采样，读不出「谁来了」，所以
+          <b>默认关闭</b>
+          ：适合人少、想看着有人进来的房间。 开启后全局每 30 秒最多 1 条（同一人 60
+          秒内只出现一次），舰长进场另有自己的一份额度。
         </p>
+        <p v-if="savedTip" class="saved">✓ 已应用并保存</p>
       </div>
     </section>
   </div>

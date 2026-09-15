@@ -182,6 +182,14 @@ pub fn save_gift_tts_config(app: &AppHandle, gift_tts: &GiftTtsConfig) -> Result
     save_config_unlocked(app, &cfg)
 }
 
+/// 保存欢迎信息配置
+pub fn save_welcome_config(app: &AppHandle, welcome: &WelcomeConfig) -> Result<(), String> {
+    let _g = lock_cfg();
+    let mut cfg = load_config_unlocked(app);
+    cfg.welcome = welcome.clone();
+    save_config_unlocked(app, &cfg)
+}
+
 /// 记录最近连接的直播间：同房间去重后置顶（顺带更新主播名），超出上限截断
 pub fn save_recent_room(app: &AppHandle, room: &RecentRoom) -> Result<(), String> {
     let _g = lock_cfg();

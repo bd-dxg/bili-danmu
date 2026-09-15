@@ -209,6 +209,24 @@ impl Default for GiftTtsConfig {
     }
 }
 
+/// 欢迎信息配置（进房 / 关注 / 分享 / 点赞 / 舰长进场）
+///
+/// 默认关：这类事件的量级比弹幕大（实测进房 : 弹幕在 1.5 : 1 ~ 10 : 1），
+/// 且在热度房里被限速后只剩 2% 左右的采样——它本来就是「冷房间看热闹」用的，
+/// 热度房里只会白占弹幕窗，所以由主播按房间情况自己开。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WelcomeConfig {
+    /// 是否在弹幕窗显示欢迎信息（关掉时 Rust 侧直接不广播，连限流都不走）
+    pub enabled: bool,
+}
+
+impl Default for WelcomeConfig {
+    fn default() -> Self {
+        Self { enabled: false }
+    }
+}
+
 /// 最近连接过的直播间（主界面输入框下方面包屑，点击直连）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecentRoom {
@@ -233,5 +251,6 @@ pub struct ConfigFile {
     pub tts: TtsConfig,
     pub gift: GiftConfig,
     pub gift_tts: GiftTtsConfig,
+    pub welcome: WelcomeConfig,
     pub recent_rooms: Vec<RecentRoom>,
 }

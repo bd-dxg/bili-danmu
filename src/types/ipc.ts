@@ -39,6 +39,8 @@ export interface DanmakuEvent {
 export interface DisplayDanmaku extends DanmakuEvent {
   /** 粉丝牌来自当前房间（决定本房牌绿 / 其它房牌灰的配色） */
   isRoomMedal: boolean
+  /** 欢迎信息行：不显示用户名，正文用弱化色（与弹幕区分） */
+  isWelcome?: boolean
 }
 
 /**
@@ -98,6 +100,34 @@ export interface GiftTtsConfig {
 export const DEFAULT_GIFT_TTS_CONFIG: GiftTtsConfig = {
   enabled: false,
   min_amount_yuan: 0,
+}
+
+/**
+ * 欢迎消息（Rust → Vue，事件名 welcome）
+ *
+ * 已在 Rust 侧做完去重（同人同类 60 秒）与限速（每 30 秒最多 1 条），
+ * 前端收到即可直接渲染。
+ */
+export interface WelcomeEvent {
+  id: string
+  kind: 'enter' | 'follow' | 'share' | 'like' | 'guard_enter'
+  uid: number
+  username: string
+  /** Unix 秒 */
+  timestamp: number
+  /** 舰队：3舰长 2提督 1总督；只有舰长进场带得出来 */
+  guard_level?: number
+}
+
+/** 欢迎信息配置（Rust ↔ Vue，事件名 welcome-config） */
+export interface WelcomeConfig {
+  /** 是否在弹幕窗显示欢迎信息（默认关） */
+  enabled: boolean
+}
+
+/** 欢迎信息默认配置（与 config/types.rs 的 WelcomeConfig::default 保持一致） */
+export const DEFAULT_WELCOME_CONFIG: WelcomeConfig = {
+  enabled: false,
 }
 
 /** Overlay 弹幕样式（Rust ↔ Vue） */
