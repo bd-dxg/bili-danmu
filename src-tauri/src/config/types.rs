@@ -217,13 +217,18 @@ impl Default for GiftTtsConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WelcomeConfig {
-    /// 是否在弹幕窗显示欢迎信息（关掉时 Rust 侧直接不广播，连限流都不走）
+    /// 是否在弹幕窗显示欢迎信息（关掉时 Rust 侧直接不广播）
     pub enabled: bool,
+    /// 是否朗读舰长进场（独立于显示开关；只有大航海会念）
+    pub tts_guard: bool,
 }
 
 impl Default for WelcomeConfig {
     fn default() -> Self {
-        Self { enabled: false }
+        Self {
+            enabled: false,
+            tts_guard: false,
+        }
     }
 }
 

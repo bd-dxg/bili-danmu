@@ -3,7 +3,7 @@
 //! 全文只有纯字符串处理，不碰队列与网络，便于单测覆盖边界。
 //! 筛选语义与前端 Overlay 的显示筛选一致（见 `matches_filter` 注释）。
 
-use crate::bilibili::event::{Backing, BackingKind, Danmaku};
+use crate::bilibili::event::{Backing, BackingKind, Danmaku, Welcome};
 use crate::config::{DanmakuFilter, TtsConfig};
 
 /// 同一字符连续重复的最大保留次数（「哈哈哈哈哈哈哈」只读三个）
@@ -122,6 +122,16 @@ pub(super) fn build_backing_text(b: &Backing) -> String {
             }
         }
     }
+}
+
+/// 组装欢迎朗读文案（目前只有舰长进场会走这里）
+///
+/// 句式与礼物朗读一致（「欢迎」+ 用户名 + 动作）。
+/// 不念舰队档位：它和用户名连读容易被听成名字的一部分（「欢迎舰长舰长甲…」），
+/// 而且只念舰长以上时档位已经在屏幕上、隐含在「为什么会被念」里。
+/// 用户名清洗后为空时 `spoken_name` 回退「观众」，不会出现缺主语的句子。
+pub(super) fn build_welcome_text(w: &Welcome) -> String {
+    format!("欢迎{}进入直播间", spoken_name(&w.username))
 }
 
 /// 朗读用的用户名：昵称里的 `_` 同样会被念成「下划线」，先剔噪声；

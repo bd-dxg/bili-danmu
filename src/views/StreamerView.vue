@@ -159,6 +159,10 @@ onMounted(async () => {
           <input v-model="welcome.enabled" type="checkbox" class="switch" @change="applyWelcome()" />
         </SettingRow>
 
+        <SettingRow label="朗读舰长进场">
+          <input v-model="welcome.tts_guard" type="checkbox" class="switch" @change="applyWelcome()" />
+        </SettingRow>
+
         <p class="tip">
           收录进房观众 / 关注 / 分享 / 点赞 / 舰长进场五类，渲染成与系统提示同一形态的浅色行。
           这类事件的量级比弹幕大（实测进房 : 弹幕 1.5 ~ 10 : 1），热度房里限速后只剩 2%
@@ -166,6 +170,11 @@ onMounted(async () => {
           <b>默认关闭</b>
           ：适合人少、想看着有人进来的房间。 开启后全局每 30 秒最多 1 条（同一人 60
           秒内只出现一次），舰长进场另有自己的一份额度。
+        </p>
+        <p class="tip">
+          朗读只念舰长 / 提督 / 总督进场，文案「欢迎老板A进入直播间」。 它排在待朗读弹幕的
+          <span class="tip-strong">后面</span>
+          （不插队、不抢弹幕的额度）， 但不受「朗读 → 开启弹幕朗读」总开关影响：这一项单独生效。
         </p>
         <p v-if="savedTip" class="saved">✓ 已应用并保存</p>
       </div>

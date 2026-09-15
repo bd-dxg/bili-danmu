@@ -123,11 +123,14 @@ export interface WelcomeEvent {
 export interface WelcomeConfig {
   /** 是否在弹幕窗显示欢迎信息（默认关） */
   enabled: boolean
+  /** 是否朗读舰长进场（独立于显示开关） */
+  tts_guard: boolean
 }
 
 /** 欢迎信息默认配置（与 config/types.rs 的 WelcomeConfig::default 保持一致） */
 export const DEFAULT_WELCOME_CONFIG: WelcomeConfig = {
   enabled: false,
+  tts_guard: false,
 }
 
 /** Overlay 弹幕样式（Rust ↔ Vue） */

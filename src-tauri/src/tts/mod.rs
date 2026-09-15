@@ -14,7 +14,7 @@ mod worker;
 
 pub use worker::spawn_worker;
 
-use crate::bilibili::event::{Backing, Danmaku};
+use crate::bilibili::event::{Backing, Danmaku, Welcome, WelcomeKind};
 use crate::config::{GiftTtsConfig, TtsConfig};
 use crate::state::OverlayState;
 use std::collections::VecDeque;
@@ -23,7 +23,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 use tokio::sync::Notify;
-use text::{build_backing_text, build_text, clean_for_speech, matches_filter};
+use text::{build_backing_text, build_text, build_welcome_text, clean_for_speech, matches_filter};
 
 /// 打断冷却：距上次打断不足这么久就不再作废在途音频
 /// （否则高频房间合成刚起步就被反复作废，白忙一场）
@@ -197,6 +197,27 @@ pub fn on_danmaku(app: &AppHandle, d: &Danmaku) {
     }
     state.push(text, max_queue, false);
     state.interrupt_if_backlogged(interrupt);
+}
+
+/// 欢迎事件到达钩子：只念舰长进场
+///
+/// 进房 / 关注 / 点赞的量级是弹幕的 1.5~10 倍，念出来会把队列一直占着、把弹幕挤没，
+/// 所以只念舰长以上（`GuardEnter` 就是舰长 / 提督 / 总督进场）。
+/// 排到**队尾**（不插队）但 `force = true`：与礼物朗读一样有自己的开关，
+/// 不该被「弹幕朗读」总开关静音。
+pub fn on_welcome(app: &AppHandle, w: &Welcome) {
+    if w.kind != WelcomeKind::GuardEnter {
+        return;
+    }
+    if !app.state::<OverlayState>().welcome.lock().unwrap().tts_guard {
+        return;
+    }
+    let text = build_welcome_text(w);
+    if text.is_empty() {
+        return;
+    }
+    let state = app.state::<TtsState>();
+    state.push(text, state.config().max_queue, true);
 }
 
 /// 试听：不受总开关限制，直接把一段文本送进朗读队列（设置页调音色/语速用）

@@ -81,20 +81,25 @@ impl Inner {
     }
 }
 
-/// 处理一条欢迎消息 → 去重限速 → 广播 `welcome` 事件给弹幕窗
+/// 处理一条欢迎消息 → 去重限速 → 分发给两个独立消费者
 ///
-/// 开关为关时直接返回，连去重表都不动。
+/// 去重与限速**与开关无关地先跑**：开关只决定「谁来消费」。若让开关去挡限速，
+/// 关掉渲染时舰长进场就能绕过去重表，同一个舰长每次进出都被重复念。
 pub(crate) fn on_welcome(app: &AppHandle, w: Welcome) {
-    if !app.state::<OverlayState>().welcome.lock().unwrap().enabled {
-        return;
-    }
     // 锁内只判定不广播：emit 是跨 webview 的分发，压在状态锁里迟早把锁序搅乱
     let pass = {
         let st = app.state::<WelcomeState>();
         let mut inner = st.inner.lock().unwrap();
         inner.admit(&w, Instant::now())
     };
-    if pass {
+    if !pass {
+        return;
+    }
+    // 两个消费者各自判开关：朗读只认舰长进场（见 `tts::on_welcome`），渲染认总开关
+    crate::tts::on_welcome(app, &w);
+    // 锁先释放再广播：emit 是跨 webview 的分发，不该在持锁状态下做
+    let render = app.state::<OverlayState>().welcome.lock().unwrap().enabled;
+    if render {
         let _ = app.emit("welcome", &w);
     }
 }
@@ -175,6 +180,21 @@ mod tests {
             inner.admit(&welcome(WelcomeKind::GuardEnter, 4), now + Duration::from_secs(31)),
             "出窗口后舰长进场恢复"
         );
+    }
+
+    #[test]
+    fn 高频灌入十分钟只放行二十条() {
+        let mut inner = Inner::default();
+        let now = Instant::now();
+        // 模拟热度房：每 0.5 秒一条进房（实测热房间 80 条/分钟），持续 10 分钟，用户各不相同
+        let mut admitted = 0usize;
+        for i in 0..1200u64 {
+            let w = welcome(WelcomeKind::Enter, i as i64);
+            if inner.admit(&w, now + Duration::from_millis(i * 500)) {
+                admitted += 1;
+            }
+        }
+        assert_eq!(admitted, 20, "10 分钟 ÷ 30 秒窗口 = 20 条，与灌入速率无关");
     }
 
     #[test]
