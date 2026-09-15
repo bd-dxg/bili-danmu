@@ -28,6 +28,16 @@ use window::{capture_overlay_bounds, flush_overlay_bounds, sync_sender_docked};
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
+        // 单实例：必须最先注册——第二个实例在插件初始化阶段就退出，
+        // 不会走到 setup 去建托盘/Overlay/连接；同时唤出已有实例的主窗口
+        // （点托盘关闭后主窗是隐藏态，需先 show 再聚焦）
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.unminimize();
+                let _ = w.set_focus();
+            }
+        }))
         .manage(AppState {
             status: Mutex::new(state::RoomStatus::Disconnected),
             cancel: Mutex::new(None),

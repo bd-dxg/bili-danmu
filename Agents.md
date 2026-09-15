@@ -58,10 +58,11 @@
 - 多窗口：根目录 `index.html`（主窗口）+ `overlay.html`（透明悬浮窗）+ `sender.html`（发送弹幕框），Tauri 配置见 `src-tauri/tauri.conf.json` 与 `capabilities/default.json`
 - IPC 双向类型约定：Rust command 与 `src/types/ipc.ts` 保持一致，改动协议时两端同步
 - 注释、commit 一律简体中文；PRD（`prd.md`）已停止维护（见下）
-- 功能状态与规划以 `docs/技术说明.md` 表格为准（未做项：礼物图标、欢迎信息、滚动弹幕、顶弹、用户屏蔽、Windows 系统 TTS、单实例、全局快捷键、开机自启、统一日志、自动更新）；`README.md` 只写面向用户的产品介绍，技术细节一律放 `docs/技术说明.md`；`prd.md` 仅作历史设计参考，新需求不要再往上写
+- 功能状态与规划以 `docs/技术说明.md` 表格为准（未做项：礼物图标、欢迎信息、滚动弹幕、顶弹、用户屏蔽、Windows 系统 TTS、全局快捷键、开机自启、统一日志、自动更新）；`README.md` 只写面向用户的产品介绍，技术细节一律放 `docs/技术说明.md`；`prd.md` 仅作历史设计参考，新需求不要再往上写
 
 ## 版本号与发布
 
+- 禁止在 `main` 上直接开发：功能 / 修复 / 重构一律先切分支（沿用 `feature/` / `fix/` / `refactor/` 前缀，见 `git branch -a`），完成后开 PR、squash 合并回 `main`；只有版本号提升、README / 文档这类发布收尾可直接提交 `main`
 - 版本号要同步改 3 处：`package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`；`src-tauri/Cargo.lock` 由 `cargo check` / 构建自动更新
 - 流程：改版本 → commit（`🚀 应用版本号升至 X.Y.Z（…）`）→ 推 `main` → `pnpm tauri build` → `gh release create`
 - 安装包路径：`src-tauri/target/release/bundle/nsis/bili-danmu_<版本>_x64-setup.exe`
