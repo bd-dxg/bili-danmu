@@ -22,16 +22,15 @@ const medal = computed(() =>
 )
 
 /**
- * 欢迎信息行的正文颜色：同亮度的淡青
+ * 正文颜色：欢迎信息行跟随「用户名颜色」，其余跟随正文颜色
  *
- * 起初用的是 70% 白（降亮度做层次），但弹幕窗背景常是游戏画面，降低对比度会直接糊掉。
- * 现在改成「亮度跟弹幕正文一样、换色相」，层次靠色相差而不是亮度差——与礼物区
- * 用金色区分的做法一致。描边继续沿用 rowShadow（与弹幕共用），可读性与弹幕一致。
+ * 欢迎行没有用户名，就拿「用户名颜色」当它的主题色：主播改这一项时，弹幕的用户名、
+ * 礼物行的用户名、欢迎行会一起变，不用为它单独配一个颜色。
+ * 与弹幕正文的区分靠 `▸` 前缀 + 色相，不靠降低亮度（弹幕窗背景多是游戏画面，降亮度会糊）。
  */
-const WELCOME_COLOR = '#A8E6F0'
-
-/** 正文颜色：欢迎信息行固定用淡青，其余跟随弹幕样式 */
-const contentColor = computed(() => (props.d.isWelcome ? WELCOME_COLOR : props.overlayStyle.content_color))
+const contentColor = computed(() =>
+  props.d.isWelcome ? props.overlayStyle.username_color : props.overlayStyle.content_color,
+)
 </script>
 
 <template>
