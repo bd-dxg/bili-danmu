@@ -80,7 +80,8 @@ function emitChange() {
       <input v-model="draft.enable_wealth" type="checkbox" class="switch" @change="emitChange()" />
     </div>
     <p class="tip">
-      开启多条身份规则时，弹幕命中任意一条即符合（如同时开舰长/房管与粉丝牌，两者都算）。 全部关闭 = 不按身份过滤。
+      同时打开多条时，满足任意一条就显示（比如同时开「舰长 / 房管」和「有粉丝牌」，这两种人的弹幕都会显示）。 都不打开 =
+      谁的弹幕都显示。
     </p>
   </div>
 
@@ -90,8 +91,8 @@ function emitChange() {
       <input v-model="draft.enable_sensitive" type="checkbox" class="switch" @change="emitChange()" />
     </div>
     <p class="tip">
-      每行一个关键词（也支持逗号分隔）。弹幕内容命中任一词即整条不{{ verb }}；
-      该屏蔽对上述身份规则同样生效（舰长/房管发言命中也会被屏蔽）。
+      每行一个关键词（也可以用逗号隔开）。弹幕里出现其中任何一个词，整条就不{{ verb }}；
+      上面的身份筛选拦不住它——舰长、房管的发言一样会被屏蔽。
     </p>
     <textarea
       v-model="sensitiveText"
