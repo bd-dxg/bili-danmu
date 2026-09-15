@@ -176,12 +176,29 @@ $dumpedCmds = @{}
 $start = [DateTime]::Now
 $buf = New-Object byte[] (4 * 1024 * 1024)
 $pending = New-Object System.Collections.Generic.List[byte]
+// B 站要求 30 秒内至少一次心跳（op=2），不发服务端会主动断开——
+// 之前的表现就是「抓不到几十秒连接就没了」，长窗口采集根本跑不完，
+// 而统计标签还写着 $DurationSec，数据量被高估。
+// ClientWebSocket 允许收 / 发并发，所以 ReceiveAsync 挂在后台等，主线程按拍发心跳。
+$HEARTBEAT_SECS = 25
+$lastBeat = [DateTime]::Now
 while (([DateTime]::Now - $start).TotalSeconds -lt $DurationSec) {
     $seg = [ArraySegment[byte]]::new($buf)
-    # 服务端可能在任意时刻直接断开（游客 token 实测几秒内就被断），抛异常即视为本次抓包结束，
+    $recvTask = $ws.ReceiveAsync($seg, [Threading.CancellationToken]::None)
+    # 等收包期间按拍发心跳（不能阻塞在 GetResult 上，否则心跳发不出去）
+    while (-not $recvTask.IsCompleted) {
+        if (([DateTime]::Now - $start).TotalSeconds -ge $DurationSec) { break }
+        if (([DateTime]::Now - $lastBeat).TotalSeconds -ge $HEARTBEAT_SECS) {
+            Send-Packet 2 ([Text.Encoding]::UTF8.GetBytes("[object Object]"))
+            $lastBeat = [DateTime]::Now
+        }
+        Start-Sleep -Milliseconds 100
+    }
+    if (-not $recvTask.IsCompleted) { break } // 到点了，收尾
+    # 服务端仍可能在任意时刻断开（游客 token 实测几秒就被断），抛异常即视为本次采集结束，
     # 仍要把已统计到的东西打出来
     try {
-        $res = $ws.ReceiveAsync($seg, [Threading.CancellationToken]::None).GetAwaiter().GetResult()
+        $res = $recvTask.GetAwaiter().GetResult()
     } catch {
         Write-Output "连接中断（服务端关闭）：$($_.Exception.InnerException.Message)"
         break
@@ -225,8 +242,9 @@ while (([DateTime]::Now - $start).TotalSeconds -lt $DurationSec) {
         $off += $total
     }
 }
+if ($recvTask -and -not $recvTask.IsCompleted) { $ws.Abort() }
 $ws.Dispose()
-Write-Output "=== STATS ($DurationSec sec) ==="
+Write-Output "=== STATS (目标 $DurationSec 秒，实际 $([int]([DateTime]::Now - $start).TotalSeconds) 秒) ==="
 $stats.GetEnumerator() | Sort-Object Name | ForEach-Object { Write-Output "$($_.Name): $($_.Value)" }
 Write-Output "=== DANMU_MSG SAMPLES ==="
 if ($danmuSamples.Count -eq 0) { Write-Output "(none)" } else { $danmuSamples | ForEach-Object { Write-Output $_ } }
