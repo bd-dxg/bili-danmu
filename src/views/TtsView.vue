@@ -102,7 +102,7 @@ function applyFilter(next: DanmakuFilter) {
           <input v-model="config.read_role" type="checkbox" class="switch" @change="save()" />
         </SettingRow>
 
-        <SettingRow label="积压时丢弃待播旧弹幕（当前这条念完）">
+        <SettingRow label="弹幕堆积时只念最新的（当前这条念完）">
           <input v-model="config.interrupt_on_backlog" type="checkbox" class="switch" @change="save()" />
         </SettingRow>
 
@@ -110,15 +110,15 @@ function applyFilter(next: DanmakuFilter) {
           <input v-model.number="config.max_len" type="number" min="0" max="500" class="num" @change="save()" />
         </SettingRow>
 
-        <SettingRow label="待朗读队列上限（超出丢弃最旧）">
+        <SettingRow label="最多排队等念的条数（超出丢弃最旧的）">
           <input v-model.number="config.max_queue" type="number" min="1" max="200" class="num" @change="save()" />
         </SettingRow>
 
         <p class="tip">
           关掉用户名和身份前缀，就只念弹幕内容（默认）。 最大字数只算弹幕正文，用户名和身份前缀不算在内。
-          弹幕特别多的直播间，建议同时打开「积压时丢弃待播旧弹幕」：这样念的总是最新那条，
+          弹幕特别多的直播间，建议同时打开「弹幕堆积时只念最新的」：这样念的总是最新那条，
           正在念的不会被打断（否则可能只听到半句用户名），最多晚一条的时间。
-          「待朗读队列上限」调小，效果类似：念的都是最新弹幕。
+          「最多排队等念的条数」调小，效果类似：念的都是最新弹幕。
         </p>
       </div>
     </section>
