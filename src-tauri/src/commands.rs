@@ -174,6 +174,27 @@ pub(crate) fn gift_tts_set_config(
     config::save_gift_tts_config(&app, &gift_tts)
 }
 
+/// 读取欢迎信息配置
+#[tauri::command]
+pub(crate) fn welcome_get_config(state: State<'_, OverlayState>) -> config::WelcomeConfig {
+    state.welcome.lock().unwrap().clone()
+}
+
+/// 更新欢迎信息配置：持久化并广播
+///
+/// 欢迎信息在 Rust 侧完成去重与限速后才广播，前端只负责把收到的行渲染出来；
+/// 关掉开关时 Rust 直接不广播，前端不需要再判一遍。
+#[tauri::command]
+pub(crate) fn welcome_set_config(
+    app: AppHandle,
+    state: State<'_, OverlayState>,
+    welcome: config::WelcomeConfig,
+) -> Result<(), String> {
+    *state.welcome.lock().unwrap() = welcome.clone();
+    let _ = app.emit("welcome-config", &welcome);
+    config::save_welcome_config(&app, &welcome)
+}
+
 /// 查询 Overlay 当前尺寸（逻辑像素，与 overlay_set_size 同一口径）
 #[tauri::command]
 pub(crate) fn overlay_get_size(app: AppHandle) -> Result<serde_json::Value, String> {

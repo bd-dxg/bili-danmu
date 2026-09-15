@@ -145,6 +145,10 @@ fn handle_frame(app: &tauri::AppHandle, room_id: u32, data: &[u8]) -> Result<(),
                                 crate::tts::on_backing(app, &b);
                                 crate::gift::on_backing(app, b);
                             }
+                            // 欢迎类：量级比弹幕大一个数量级，先过去重与限速再广播
+                            BilibiliEvent::Welcome(w) => {
+                                crate::welcome::on_welcome(app, w);
+                            }
                         }
                     }
                 }

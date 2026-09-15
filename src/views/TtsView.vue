@@ -86,8 +86,8 @@ function applyFilter(next: DanmakuFilter) {
         </SettingRow>
 
         <p class="tip">
-          使用微软 Edge 的在线语音（Edge TTS），共 {{ voices.length }} 个中文音色， 普通话排在最前，其后是方言与粤语 /
-          台湾。当前音色 ID：{{ config.voice }}。 合成依赖网络，断网或微软限流时这一段会跳过，不影响下一条。
+          使用微软 Edge 的在线语音，共 {{ voices.length }} 个中文音色， 普通话排在最前，其后是方言与粤语 /
+          台湾。需要联网：断网或微软忙的时候这一段会没声音，不影响下一条。
         </p>
       </div>
     </section>
@@ -102,7 +102,7 @@ function applyFilter(next: DanmakuFilter) {
           <input v-model="config.read_role" type="checkbox" class="switch" @change="save()" />
         </SettingRow>
 
-        <SettingRow label="积压时丢弃待播旧弹幕（当前这条念完）">
+        <SettingRow label="弹幕堆积时只念最新的（当前这条念完）">
           <input v-model="config.interrupt_on_backlog" type="checkbox" class="switch" @change="save()" />
         </SettingRow>
 
@@ -110,15 +110,15 @@ function applyFilter(next: DanmakuFilter) {
           <input v-model.number="config.max_len" type="number" min="0" max="500" class="num" @change="save()" />
         </SettingRow>
 
-        <SettingRow label="待朗读队列上限（超出丢弃最旧）">
+        <SettingRow label="最多排队等念的条数（超出丢弃最旧的）">
           <input v-model.number="config.max_queue" type="number" min="1" max="200" class="num" @change="save()" />
         </SettingRow>
 
         <p class="tip">
-          关掉用户名与身份前缀 = 只念弹幕内容（默认）。最大字数只算弹幕正文，
-          身份前缀与用户名不占额度。高速直播间建议同时开「积压时丢弃旧弹幕」：
-          念的总是队列里最新的那条，正在念的那条不被打断（避免只听到半句用户名）， 延迟上限 =
-          一条朗读时长。队列上限调小则能保证念的都是最新弹幕。
+          关掉用户名和身份前缀，就只念弹幕内容（默认）。 最大字数只算弹幕正文，用户名和身份前缀不算在内。
+          弹幕特别多的直播间，建议同时打开「弹幕堆积时只念最新的」：这样念的总是最新那条，
+          正在念的不会被打断（否则可能只听到半句用户名），最多晚一条的时间。
+          「最多排队等念的条数」调小，效果类似：念的都是最新弹幕。
         </p>
       </div>
     </section>

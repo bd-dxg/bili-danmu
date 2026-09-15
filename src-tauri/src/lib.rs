@@ -15,6 +15,7 @@ mod gift;
 mod state;
 mod tts;
 mod update;
+mod welcome;
 mod window;
 
 use state::{AppState, OverlayState};
@@ -71,6 +72,7 @@ pub fn run() {
         .manage(OverlayState::default())
         .manage(tts::TtsState::new(config::TtsConfig::default()))
         .manage(gift::GiftState::default())
+        .manage(welcome::WelcomeState::default())
         .setup(|app| {
             // 加载持久化配置：登录态 → AppState.auth；样式/位置 → OverlayState
             let cfg = config::load_config(app.handle());
@@ -86,6 +88,7 @@ pub fn run() {
                 *ov.style.lock().unwrap() = cfg.overlay_style.clone();
                 *ov.filter.lock().unwrap() = cfg.danmaku_filter.clone();
                 *ov.gift.lock().unwrap() = cfg.gift.clone();
+                *ov.welcome.lock().unwrap() = cfg.welcome.clone();
             }
             // TTS：恢复朗读配置并启动串行朗读 worker（与弹幕显示完全解耦）
             app.state::<tts::TtsState>()
@@ -261,6 +264,8 @@ pub fn run() {
             commands::gift_set_config,
             commands::gift_tts_get_config,
             commands::gift_tts_set_config,
+            commands::welcome_get_config,
+            commands::welcome_set_config,
             commands::tts_get_config,
             commands::tts_set_config,
             commands::tts_test_speak,

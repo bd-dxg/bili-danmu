@@ -4,7 +4,14 @@ import { onMounted, ref } from 'vue'
 
 import SettingRow from '../components/SettingRow.vue'
 import { useSaveTip } from '../composables/useSaveTip'
-import { DEFAULT_GIFT_CONFIG, DEFAULT_GIFT_TTS_CONFIG, type GiftConfig, type GiftTtsConfig } from '../types/ipc'
+import {
+  DEFAULT_GIFT_CONFIG,
+  DEFAULT_GIFT_TTS_CONFIG,
+  DEFAULT_WELCOME_CONFIG,
+  type GiftConfig,
+  type GiftTtsConfig,
+  type WelcomeConfig,
+} from '../types/ipc'
 
 // 页内标签：gift / giftTts / welcome
 const tab = ref<'gift' | 'giftTts' | 'welcome'>('gift')
@@ -13,6 +20,8 @@ const tab = ref<'gift' | 'giftTts' | 'welcome'>('gift')
 const gift = ref<GiftConfig>({ ...DEFAULT_GIFT_CONFIG })
 // 礼物朗读配置：开关与门槛独立于弹幕朗读与礼物区显示
 const giftTts = ref<GiftTtsConfig>({ ...DEFAULT_GIFT_TTS_CONFIG })
+// 欢迎信息配置（默认关；限流在 Rust 侧，这里只负责开关读写）
+const welcome = ref<WelcomeConfig>({ ...DEFAULT_WELCOME_CONFIG })
 
 const { savedTip, opError, showSaved, showError } = useSaveTip()
 
@@ -40,10 +49,20 @@ async function applyGiftTts() {
   }
 }
 
+async function applyWelcome() {
+  try {
+    await invoke('welcome_set_config', { welcome: { ...welcome.value } })
+    showSaved()
+  } catch (e) {
+    showError(e)
+  }
+}
+
 onMounted(async () => {
   try {
     gift.value = await invoke<GiftConfig>('gift_get_config')
     giftTts.value = await invoke<GiftTtsConfig>('gift_tts_get_config')
+    welcome.value = await invoke<WelcomeConfig>('welcome_get_config')
   } catch (e) {
     console.error('读取礼物配置失败', e)
   }
@@ -136,10 +155,27 @@ onMounted(async () => {
 
     <section v-show="tab === 'welcome'" class="tab-pane">
       <div class="setting-card">
+        <SettingRow label="在弹幕窗显示欢迎信息">
+          <input v-model="welcome.enabled" type="checkbox" class="switch" @change="applyWelcome()" />
+        </SettingRow>
+
+        <SettingRow label="朗读舰长进场">
+          <input v-model="welcome.tts_guard" type="checkbox" class="switch" @change="applyWelcome()" />
+        </SettingRow>
+
         <p class="tip">
-          进房观众 / 上舰 / 关注点赞的欢迎消息：渲染开关、朗读开关、过滤规则（如仅舰长以上、
-          忽略无粉丝牌用户）。功能未实现。
+          包含「进入直播间」「关注」「分享」「点赞」「舰长进场」五类，在弹幕窗里以浅色文字单独显示。
+          观众多的时候这类消息会比弹幕还多，只能挑极少数几条显示，反而看不出是谁来了，所以
+          <b>默认关闭</b>
+          ：适合观众不多、想看着有人进来的直播间。 开启后大约每 30 秒显示一条，同一个人 1
+          分钟内只出现一次；舰长、提督、总督进场不受这个限制，会照常显示。
         </p>
+        <p class="tip">
+          朗读只念舰长、提督、总督进场，念的是「欢迎舰长 老板A进入直播间」（带档位）。 它会排在待念的弹幕
+          <b>后面</b>
+          ，不打断正在念的内容；也不受「朗读」页里弹幕朗读开关的影响，可以单独打开。
+        </p>
+        <p v-if="savedTip" class="saved">✓ 已应用并保存</p>
       </div>
     </section>
   </div>

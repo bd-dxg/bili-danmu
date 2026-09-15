@@ -14,6 +14,8 @@ import {
   type GiftConfig,
   type OverlayStyle,
   type RoomStatusEvent,
+  type WelcomeConfig,
+  type WelcomeEvent,
 } from '../types/ipc'
 import DanmakuRow from './DanmakuRow.vue'
 import GiftRow from './GiftRow.vue'
@@ -65,29 +67,82 @@ function applyConnStatus(st: RoomStatusEvent) {
   }
 }
 
+/** 追加一行并裁到上限（弹幕 / 系统提示 / 欢迎信息共用同一份列表与上限） */
+function pushRow(row: DisplayDanmaku) {
+  const list = danmakuList.value
+  list.push(row)
+  if (list.length > MAX_ITEMS) {
+    list.splice(0, list.length - MAX_ITEMS)
+  }
+}
+
 /** 推送系统提示行（无用户名，纯文本，与弹幕同样式） */
 function pushSystem(text: string) {
-  const list = danmakuList.value
-  list.push({
-    id: `sys-${Date.now()}-${list.length}`,
+  pushRow({
+    id: `sys-${Date.now()}-${danmakuList.value.length}`,
     username: '',
     content: text,
     timestamp: Date.now() / 1000,
     is_admin: false,
     isRoomMedal: false,
   })
-  if (list.length > MAX_ITEMS) {
-    list.splice(0, list.length - MAX_ITEMS)
-  }
 }
 
 /** 追加一条弹幕，超出上限丢弃最旧的 */
 function pushDanmaku(d: DisplayDanmaku) {
-  const list = danmakuList.value
-  list.push(d)
-  if (list.length > MAX_ITEMS) {
-    list.splice(0, list.length - MAX_ITEMS)
+  pushRow(d)
+}
+
+/** 舰队档位名（guard_level：3 舰长 / 2 提督 / 1 总督） */
+const GUARD_LABEL: Record<number, string> = { 0: '大航海', 1: '总督', 2: '提督', 3: '舰长' }
+
+/**
+ * 欢迎信息文案：`▸` 前缀让它在弹幕里一眼可辨
+ *
+ * 文字颜色改成与弹幕同亮度的淡青后，层次靠色相；再给个前缀符号，
+ * 即使有人把弹幕正文色也改成青色也能分得出来。
+ */
+function welcomeText(w: WelcomeEvent): string {
+  switch (w.kind) {
+    case 'enter':
+      return `▸ ${w.username} 进入直播间`
+    case 'follow':
+      return `▸ ${w.username} 关注了直播间`
+    case 'share':
+      return `▸ ${w.username} 分享了直播间`
+    case 'like':
+      return `▸ ${w.username} 点赞了直播间`
+    default:
+      return `▸ ${w.username} 乘坐${GUARD_LABEL[w.guard_level ?? 0]}进入直播间`
   }
+}
+
+/**
+ * 推送一条欢迎提示行（无用户名、不显示徽章，与系统提示行同一形态）
+ *
+ * 去重与限速都在 Rust 侧做完（`welcome.rs`），这里只渲染收到的行；
+ * 开关关掉时 Rust 直接不广播，所以无需在前端再判一次配置。
+ */
+function pushWelcome(w: WelcomeEvent) {
+  pushRow({
+    id: w.id,
+    username: '',
+    content: welcomeText(w),
+    timestamp: w.timestamp,
+    is_admin: false,
+    isRoomMedal: false,
+    isWelcome: true,
+  })
+}
+
+/**
+ * 关掉欢迎信息时清掉列表里还没滚出去的欢迎行
+ *
+ * 欢迎行与弹幕混在同一份列表里，不像礼物区那样有个 `v-if` 能整块隐藏，
+ * 不主动清的话最多会残留 120 条。
+ */
+function dropWelcomeRows() {
+  danmakuList.value = danmakuList.value.filter(d => !d.isWelcome)
 }
 
 /**
@@ -135,6 +190,8 @@ let unlistenStyle: UnlistenFn | undefined
 let unlistenFilter: UnlistenFn | undefined
 let unlistenGift: UnlistenFn | undefined
 let unlistenGiftCfg: UnlistenFn | undefined
+let unlistenWelcome: UnlistenFn | undefined
+let unlistenWelcomeCfg: UnlistenFn | undefined
 
 /// 弹幕过滤判定：
 /// 身份规则（舰长/房管、有粉丝牌、荣耀等级）为「或」关系——任一开启的规则命中即显示；
@@ -169,6 +226,15 @@ onMounted(async () => {
   })
   unlistenGiftCfg = await listen<GiftConfig>('gift-config', e => {
     giftCfg.value = e.payload
+  })
+  unlistenWelcome = await listen<WelcomeEvent>('welcome', e => {
+    pushWelcome(e.payload)
+  })
+  // 关掉开关时把残留的欢迎行清掉（开的那一侧不用管：Rust 会开始广播）
+  unlistenWelcomeCfg = await listen<WelcomeConfig>('welcome-config', e => {
+    if (!e.payload.enabled) {
+      dropWelcomeRows()
+    }
   })
   unlistenStyle = await listen<OverlayStyle>('overlay-style', e => {
     style.value = e.payload
@@ -217,6 +283,8 @@ onUnmounted(() => {
   unlistenFilter?.()
   unlistenGift?.()
   unlistenGiftCfg?.()
+  unlistenWelcome?.()
+  unlistenWelcomeCfg?.()
 })
 </script>
 

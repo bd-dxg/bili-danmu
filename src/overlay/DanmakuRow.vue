@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 
 import MetaBadges from './MetaBadges.vue'
-import { rowShadow } from './row-style'
+import { rowShadow, shiftHue, WELCOME_HUE_SHIFT } from './row-style'
 
 import type { DisplayDanmaku, OverlayStyle } from '../types/ipc'
 
@@ -19,6 +19,23 @@ const medal = computed(() =>
   props.d.medal_name
     ? { name: props.d.medal_name, level: props.d.medal_level ?? 0, isRoom: props.d.isRoomMedal }
     : undefined,
+)
+
+/**
+ * 正文颜色：欢迎信息行跟随「用户名颜色」，其余跟随正文颜色
+ *
+ * 欢迎行没有用户名，就拿「用户名颜色」当它的主题色：主播改这一项时，弹幕的用户名、
+ * 礼物行的用户名、欢迎行会一起变，不用为它单独配一个颜色。
+ * 与弹幕正文的区分靠 `▸` 前缀 + 色相，不靠降低亮度（弹幕窗背景多是游戏画面，降亮度会糊）。
+ */
+/**
+ * 正文颜色：欢迎信息行从「用户名颜色」偏移色相派生，其余跟随正文颜色
+ *
+ * 为什么不直接沿用「用户名颜色」：那样和弹幕用户名完全同色，丢了区分度。
+ * 为什么不降亮度：弹幕窗背景多是游戏画面，降亮度会直接糊。只动色相才兼顾两者。
+ */
+const contentColor = computed(() =>
+  props.d.isWelcome ? shiftHue(props.overlayStyle.username_color, WELCOME_HUE_SHIFT) : props.overlayStyle.content_color,
 )
 </script>
 
@@ -45,7 +62,7 @@ const medal = computed(() =>
       <span
         class="content"
         :style="{
-          color: overlayStyle.content_color,
+          color: contentColor,
           fontWeight: overlayStyle.bold ? 700 : 400,
         }">
         {{ d.content }}

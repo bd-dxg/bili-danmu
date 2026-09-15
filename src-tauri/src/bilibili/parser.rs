@@ -4,7 +4,7 @@
 //!   → proto 0: body 即 JSON（可能为多个命令的数组）
 //!   → proto 2/3: body 是 Zlib/Brotli 压缩的嵌套包流，解压后递归拆包
 
-use crate::bilibili::event::{Backing, BackingKind, BilibiliEvent, Danmaku};
+use crate::bilibili::event::{Backing, BackingKind, BilibiliEvent, Danmaku, Welcome, WelcomeKind};
 use crate::bilibili::protobuf;
 use crate::bilibili::protocol::{decode_stream, Packet, PROTO_BROTLI, PROTO_JSON, PROTO_ZLIB};
 use brotli_decompressor::Decompressor;
@@ -97,8 +97,25 @@ pub fn parse_payload(bytes: &[u8]) -> Result<Vec<BilibiliEvent>, String> {
                     events.push(BilibiliEvent::Backing(b));
                 }
             }
-            // 其它命令（进场/通知等）暂无消费者，直接忽略——逐条构造事件
-            // 并打印日志会在大房间高频事件流下造成日志洪泛与无谓分配
+            // ---- 欢迎类（进房 / 关注 / 分享 / 点赞 / 舰长进场）----
+            "INTERACT_WORD_V2" => {
+                if let Some(w) = parse_interact_word_v2(item) {
+                    events.push(BilibiliEvent::Welcome(w));
+                }
+            }
+            "LIKE_INFO_V3_CLICK" => {
+                if let Some(w) = parse_like_click(item) {
+                    events.push(BilibiliEvent::Welcome(w));
+                }
+            }
+            "ENTRY_EFFECT" => {
+                if let Some(w) = parse_entry_effect(item) {
+                    events.push(BilibiliEvent::Welcome(w));
+                }
+            }
+            // 其它命令（在线榜 / 看过人数 / 全网广播 / LIKE_INFO_V3_UPDATE 等）
+            // 暂无消费者，直接忽略——逐条构造事件并打印日志会在高频事件流下
+            // 造成日志洪泛与无谓分配
             _ => {}
         }
     }
@@ -317,6 +334,99 @@ fn parse_gift_v2(v: &serde_json::Value) -> Vec<Backing> {
     out
 }
 
+/// 取 `uinfo.guard.level`，0（无大航海）归一成 None
+fn guard_level_of(d: &serde_json::Value) -> Option<u32> {
+    d.pointer("/uinfo/guard/level")
+        .and_then(|x| x.as_u64())
+        .map(|l| l as u32)
+        .filter(|l| *l > 0)
+}
+
+/// 解析 INTERACT_WORD_V2（进房 / 关注 / 分享）→ Welcome
+///
+/// 载荷是 base64 的 protobuf（字段号实测得出）：1=uid、2=用户名、5=msg_type、
+/// 6=房间号、7=时间戳(秒)。msg_type：1 进入 / 2 关注 / 3 分享
+/// （2 已实测到，3 未抓到、按 B 站惯例），其余取值一律丢——宁可漏也不要张冠李戴。
+///
+/// 注意：这条事件里**没有** guard_level（60 个样本做了全字段扫描确认，
+/// 22.4.1 那个 1..33 的值是等级不是舰队），所以「只念舰长以上」不能靠进房事件，
+/// 只能靠 ENTRY_EFFECT。
+fn parse_interact_word_v2(v: &serde_json::Value) -> Option<Welcome> {
+    let raw = v
+        .get("data")?
+        .get("pb")?
+        .as_str()
+        .and_then(protobuf::decode_base64)?;
+    let f = protobuf::decode(&raw).ok()?;
+    let msg_type = protobuf::int(&f, 5)?;
+    let kind = match msg_type {
+        1 => WelcomeKind::Enter,
+        2 => WelcomeKind::Follow,
+        3 => WelcomeKind::Share,
+        _ => return None,
+    };
+    let uid = protobuf::int(&f, 1).unwrap_or(0) as i64;
+    let timestamp = normalize_timestamp(protobuf::int(&f, 7).unwrap_or(0) as i64);
+    Some(Welcome {
+        id: format!("iw-{msg_type}-{uid}-{timestamp}"),
+        kind,
+        uid,
+        username: protobuf::string(&f, 2).unwrap_or_default(),
+        timestamp,
+        guard_level: None,
+    })
+}
+
+/// 解析 LIKE_INFO_V3_CLICK（单次点赞）→ Welcome
+///
+/// 纯 JSON，不需要 protobuf。`LIKE_INFO_V3_UPDATE` 故意不解析：
+/// 它只有累计点赞总数（`click_count`），不是「事件」，单条点赞用这条就够。
+fn parse_like_click(v: &serde_json::Value) -> Option<Welcome> {
+    let d = v.get("data")?;
+    let uid = d.get("uid").and_then(|x| x.as_i64()).unwrap_or(0);
+    // 载荷里没有时间戳字段，用系统时间（同人同一秒的连点会因此合并成一条）
+    let timestamp = fallback_now();
+    Some(Welcome {
+        id: format!("like-{uid}-{timestamp}"),
+        kind: WelcomeKind::Like,
+        uid,
+        username: d
+            .get("uname")
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        timestamp,
+        guard_level: guard_level_of(d),
+    })
+}
+
+/// 解析 ENTRY_EFFECT（舰长 / 提督 / 总督进场特效）→ Welcome
+///
+/// 这条**不是**只给大航海用的：荣耀等级高的普通观众进场也会触发（实测有
+/// `guard.level=0` + `wealth.level=15` 的样本），所以必须按 `guard.level>0` 过滤，
+/// 否则「上舰欢迎」会变成「高等级观众欢迎」。
+///
+/// 载荷里没有可直接用的时间戳（`trigger_time` 是 100ns 单位，且与常规时间戳不同源），
+/// 统一用系统时间。
+fn parse_entry_effect(v: &serde_json::Value) -> Option<Welcome> {
+    let d = v.get("data")?;
+    let guard_level = guard_level_of(d)?;
+    let uid = d.get("uid").and_then(|x| x.as_i64()).unwrap_or(0);
+    let timestamp = fallback_now();
+    Some(Welcome {
+        id: format!("guard-{uid}-{timestamp}"),
+        kind: WelcomeKind::GuardEnter,
+        uid,
+        username: d
+            .pointer("/uinfo/base/name")
+            .and_then(|x| x.as_str())
+            .unwrap_or_default()
+            .to_string(),
+        timestamp,
+        guard_level: Some(guard_level),
+    })
+}
+
 /// 时间戳归一化：13 位毫秒转秒，0 或缺失时用系统时间。
 /// 各命令一律走这里，避免某条路径忘了转毫秒写出错误时间。
 fn normalize_timestamp(t: i64) -> i64 {
@@ -497,7 +607,7 @@ mod tests {
         let events = parse_payload(payload.as_bytes()).expect("payload 应可解析");
         let mut danmu = events.into_iter().filter_map(|e| match e {
             BilibiliEvent::Danmaku(d) => Some(d),
-            BilibiliEvent::Backing(_) => None,
+            _ => None,
         });
         danmu.next().expect("应产出一条弹幕")
     }
@@ -508,7 +618,7 @@ mod tests {
         let events = parse_payload(payload.as_bytes()).expect("payload 应可解析");
         let mut backings = events.into_iter().filter_map(|e| match e {
             BilibiliEvent::Backing(b) => Some(b),
-            BilibiliEvent::Danmaku(_) => None,
+            _ => None,
         });
         backings.next().expect("应产出一条打赏")
     }
@@ -763,7 +873,7 @@ mod tests {
             .iter()
             .filter_map(|e| match e {
                 BilibiliEvent::Backing(b) => Some(b.gift_name.clone()),
-                BilibiliEvent::Danmaku(_) => None,
+                _ => None,
             })
             .collect();
         assert_eq!(names, vec!["火箭", "小心心"]);
@@ -848,5 +958,146 @@ mod tests {
     fn 非utf8或坏json返回错误() {
         assert!(parse_payload(b"\xff\xfe").is_err());
         assert!(parse_payload(b"not json").is_err());
+    }
+
+    // ---- 欢迎类（字段号来自实测，见 Task/findings.md）----
+
+    /// 构造一条 INTERACT_WORD_V2（msg_type: 1 进入 / 2 关注 / 3 分享）
+    fn interact_word(msg_type: u64, uid: u64, uname: &str, ts: u64) -> serde_json::Value {
+        let pb = [
+            pb_int(1, uid),
+            pb_bytes(2, uname.as_bytes()),
+            pb_int(5, msg_type),
+            pb_int(6, 1978001213),
+            pb_int(7, ts),
+        ]
+        .concat();
+        serde_json::json!({
+            "cmd": "INTERACT_WORD_V2",
+            "data": { "dmscore": 3, "pb": protobuf::encode_base64(&pb) }
+        })
+    }
+
+    /// 解析出唯一一条欢迎事件（无则 panic）
+    fn parse_welcome(v: serde_json::Value) -> Welcome {
+        let payload = v.to_string();
+        let events = parse_payload(payload.as_bytes()).expect("payload 应可解析");
+        events
+            .into_iter()
+            .find_map(|e| match e {
+                BilibiliEvent::Welcome(w) => Some(w),
+                _ => None,
+            })
+            .expect("应产出一条欢迎事件")
+    }
+
+    #[test]
+    fn 进房关注分享按msg_type区分() {
+        assert_eq!(
+            parse_welcome(interact_word(1, 10086, "观众A", 1700000300)).kind,
+            WelcomeKind::Enter
+        );
+        assert_eq!(
+            parse_welcome(interact_word(2, 10086, "观众A", 1700000300)).kind,
+            WelcomeKind::Follow
+        );
+        assert_eq!(
+            parse_welcome(interact_word(3, 10086, "观众A", 1700000300)).kind,
+            WelcomeKind::Share
+        );
+    }
+
+    #[test]
+    fn 进房事件带上用户名与时间戳() {
+        let w = parse_welcome(interact_word(1, 10086, "观众A", 1700000300));
+        assert_eq!(w.uid, 10086);
+        assert_eq!(w.username, "观众A");
+        assert_eq!(w.timestamp, 1700000300);
+        assert_eq!(w.guard_level, None, "进房事件里没有 guard_level");
+    }
+
+    #[test]
+    fn 未知msg_type的进房事件被丢弃() {
+        let v = interact_word(9, 10086, "观众A", 1700000300);
+        let events = parse_payload(v.to_string().as_bytes()).unwrap();
+        assert!(events.is_empty(), "msg_type=9 不猜语义，直接丢");
+    }
+
+    #[test]
+    fn 缺pb的进房事件不panic() {
+        let v = serde_json::json!({ "cmd": "INTERACT_WORD_V2", "data": {} });
+        let events = parse_payload(v.to_string().as_bytes()).unwrap();
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn 点赞事件是单条而不是总数() {
+        let v = serde_json::json!({
+            "cmd": "LIKE_INFO_V3_CLICK",
+            "data": {
+                "uid": 19702780,
+                "uname": "卡皮巴拉吃豆檛子",
+                "msg_type": 6,
+                "uinfo": { "guard": { "level": 0 } }
+            }
+        });
+        let w = parse_welcome(v);
+        assert_eq!(w.kind, WelcomeKind::Like);
+        assert_eq!(w.username, "卡皮巴拉吃豆檛子");
+        assert_eq!(w.guard_level, None, "guard.level=0 应归一成 None");
+    }
+
+    #[test]
+    fn 点赞总数事件不产生欢迎行() {
+        // LIKE_INFO_V3_UPDATE 只有 click_count，是累计值不是事件
+        let v = serde_json::json!({
+            "cmd": "LIKE_INFO_V3_UPDATE",
+            "data": { "click_count": 79652 }
+        });
+        let events = parse_payload(v.to_string().as_bytes()).unwrap();
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn 舰长进场事件带出舰队等级() {
+        let v = serde_json::json!({
+            "cmd": "ENTRY_EFFECT",
+            "data": {
+                "id": 380,
+                "uid": 79648849,
+                "business": 6,
+                "copy_writing": "<%舰长甲%> 来了",
+                "uinfo": {
+                    "uid": 79648849,
+                    "base": { "name": "舰长甲" },
+                    "guard": { "level": 3 }
+                }
+            }
+        });
+        let w = parse_welcome(v);
+        assert_eq!(w.kind, WelcomeKind::GuardEnter);
+        assert_eq!(w.username, "舰长甲");
+        assert_eq!(w.guard_level, Some(3));
+    }
+
+    #[test]
+    fn 普通高等级观众进场不算上舰() {
+        // 实测样本：ENTRY_EFFECT 也会给荣耀等级高的普通观众触发（guard.level=0）
+        let v = serde_json::json!({
+            "cmd": "ENTRY_EFFECT",
+            "data": {
+                "id": 380,
+                "uid": 79648849,
+                "copy_writing": "<%观众甲%> 来了",
+                "uinfo": {
+                    "uid": 79648849,
+                    "base": { "name": "观众甲" },
+                    "guard": { "level": 0 },
+                    "wealth": { "level": 15 }
+                }
+            }
+        });
+        let events = parse_payload(v.to_string().as_bytes()).unwrap();
+        assert!(events.is_empty(), "guard.level=0 不是上舰欢迎");
     }
 }
