@@ -125,7 +125,7 @@ pub async fn fetch_danmu_conf(
     if !cookies.trim().is_empty() {
         match fetch_via_danmu_info_signed(client, room_id, cookies).await {
             Ok(conf) => return Ok((conf, false)),
-            Err(e) => eprintln!("[bilibili] getDanmuInfo(wbi) 失败: {e}，回退游客 getConf"),
+            Err(e) => log::warn!("[bilibili] getDanmuInfo(wbi) 失败: {e}，回退游客 getConf"),
         }
     }
     let conf = fetch_via_get_conf(client, room_id).await?;

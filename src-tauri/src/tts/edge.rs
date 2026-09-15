@@ -73,7 +73,7 @@ async fn dial_tcp() -> Result<(tokio::net::TcpStream, std::net::SocketAddr), Str
         match tokio::net::TcpStream::connect(addr).await {
             Ok(stream) => {
                 if !addr.is_ipv4() {
-                    eprintln!("[tts] IPv4 不可达，连接回退到 {addr}（IPv6）");
+                    log::warn!("[tts] IPv4 不可达，连接回退到 {addr}（IPv6）");
                 }
                 return Ok((stream, addr));
             }

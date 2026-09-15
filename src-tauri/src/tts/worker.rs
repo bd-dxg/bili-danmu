@@ -114,8 +114,8 @@ pub fn spawn_worker(app: AppHandle) {
                     continue;
                 }
                 // 单条失败只记录不重试：重试会让日志和请求雪崩（熔断见下）
-                Ok(Err(e)) => eprintln!("[tts] 合成失败：{e}"),
-                Err(_) => eprintln!("[tts] 合成超时（{SYNTH_TIMEOUT:?}）"),
+                Ok(Err(e)) => log::error!("[tts] 合成失败：{e}"),
+                Err(_) => log::error!("[tts] 合成超时（{SYNTH_TIMEOUT:?}）"),
             }
 
             // 熔断：积压的弹幕已经过期（听众关心的是新弹幕），先清掉；
@@ -127,7 +127,7 @@ pub fn spawn_worker(app: AppHandle) {
             // 指数封顶到 2^6（64s）再 min，否则持续失败几十分钟后 `2u32.pow` 会溢出 panic
             let shift = (consecutive_fail - FAIL_THRESHOLD).min(6);
             let backoff = (FAIL_BACKOFF_MIN * 2u32.pow(shift)).min(FAIL_BACKOFF_MAX);
-            eprintln!("[tts] 连续失败 {consecutive_fail} 次，丢弃积压共暂停 {backoff:?} 后重试");
+            log::error!("[tts] 连续失败 {consecutive_fail} 次，丢弃积压共暂停 {backoff:?} 后重试");
             // 只丢待朗读的弹幕：试听与礼物朗读保留——大额打赏只来一次，
             // 宁晚勿失（退避结束、服务端恢复后补念）
             app.state::<TtsState>()

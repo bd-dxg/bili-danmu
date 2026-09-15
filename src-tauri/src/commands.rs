@@ -339,3 +339,17 @@ fn voice_options(voices: &[(String, String)]) -> Vec<serde_json::Value> {
         .map(|(id, label)| json!({ "id": id, "label": label }))
         .collect()
 }
+
+/// 打开日志目录（关于页「日志」按钮；排障时让用户能直接拿到日志文件）
+///
+/// 目录可能还不存在（本次运行还没写过日志、或用户手动清过），先建出来再开：
+/// ShellExecuteW 对不存在的路径会返回 SE_ERR_* 而打不开。
+#[tauri::command]
+pub(crate) fn open_log_dir(app: AppHandle) -> Result<(), String> {
+    let dir = app
+        .path()
+        .app_log_dir()
+        .map_err(|e| format!("取日志目录失败: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建日志目录失败: {e}"))?;
+    crate::update::open_in_shell(&dir.to_string_lossy())
+}

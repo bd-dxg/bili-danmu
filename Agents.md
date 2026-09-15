@@ -24,7 +24,7 @@
 
 - 前端：Vue 3（`<script setup>`）+ Vite + TypeScript，包管理 pnpm
 - 桌面壳：Tauri 2（Rust，edition 2021）
-- Rust 关键依赖：tokio / reqwest（json、gzip；登录 Cookie 全程显式 header 传递）/ tokio-tungstenite（弹幕 WebSocket + Edge TTS WebSocket）/ native-tls（Edge TTS 自建 TCP 后显式包 TLS）/ futures-util（WS 收发）/ brotli-decompressor + flate2（弹幕包解压）/ md-5（WBI 签名）/ sha2（Edge TTS 的 Sec-MS-GEC 令牌）/ windows-sys（登录 Cookie 的 Windows DPAPI 加密、TTS 的 winmm MCI 播放）
+- Rust 关键依赖：tokio / reqwest（json、gzip；登录 Cookie 全程显式 header 传递）/ tokio-tungstenite（弹幕 WebSocket + Edge TTS WebSocket）/ native-tls（Edge TTS 自建 TCP 后显式包 TLS）/ futures-util（WS 收发）/ brotli-decompressor + flate2（弹幕包解压）/ md-5（WBI 签名）/ sha2（Edge TTS 的 Sec-MS-GEC 令牌）/ windows-sys（登录 Cookie 的 Windows DPAPI 加密、TTS 的 winmm MCI 播放）/ tauri-plugin-log（统一日志落盘，业务代码经 `log` 门面宏调用）
 - 授权：GPL-3.0
 
 ## 常用命令
@@ -58,7 +58,7 @@
 - 多窗口：根目录 `index.html`（主窗口）+ `overlay.html`（透明悬浮窗）+ `sender.html`（发送弹幕框），Tauri 配置见 `src-tauri/tauri.conf.json` 与 `capabilities/default.json`
 - IPC 双向类型约定：Rust command 与 `src/types/ipc.ts` 保持一致，改动协议时两端同步
 - 注释、commit 一律简体中文；PRD（`prd.md`）已停止维护（见下）
-- 功能状态与规划以 `docs/技术说明.md` 表格为准（未做项：礼物图标、欢迎信息、滚动弹幕、顶弹、用户屏蔽、Windows 系统 TTS、全局快捷键、开机自启、统一日志、自动更新）；`README.md` 只写面向用户的产品介绍，技术细节一律放 `docs/技术说明.md`；`prd.md` 仅作历史设计参考，新需求不要再往上写
+- 功能状态与规划以 `docs/技术说明.md` 表格为准（未做项：礼物图标、欢迎信息、滚动弹幕、顶弹、用户屏蔽、Windows 系统 TTS、全局快捷键、开机自启、自动更新）；`README.md` 只写面向用户的产品介绍，技术细节一律放 `docs/技术说明.md`；`prd.md` 仅作历史设计参考，新需求不要再往上写
 
 ## 版本号与发布
 
@@ -91,3 +91,4 @@
 - Edge TTS **不接受连接复用**：同一条连接发第二轮 speech.config + ssml 必被 RST（10054，实测）。`synthesize` 每条新建连接，别改成连接池/长连接
 - Edge TTS 建连走 `edge.rs` 自研的 `dial_tcp`（自己解析 DNS、**IPv4 优先**、全部失败才回退 IPv6），别换回 `tokio_tungstenite::connect_async`：后者按 DNS 返回顺序连（Windows 上 IPv6 通常排前）且不会因链路劣化换地址族，国内 IPv6 直连微软偶发被 RST，现象是弹幕一路正常而朗读整段全挂（收流阶段 10054）。合成失败日志末尾带「对端 IP」就是为了区分是哪条路径出的问题
 - 合成失败必须走熔断退避（`tts/worker.rs`：连续 2 次 → 清空积压 + 1/2/4…封顶 60s）：失败是 ~0.1s 级响应、成功是 ~2s，若“失败立即重试下一条”，请求速率会瞬时飙升十倍，把服务端限流撞得更紧并自我维持（表现为持续 10054 + 20s 黑洞超时）。排查用 `cargo test --lib -- --ignored edge_burst_live --nocapture`
+- 日志一律走 `log::info!/warn!/error!`，**禁止新增 `eprintln!` / `println!`**：release 是 `windows_subsystem = "windows"`，stderr 直接丢失，排障时拿不到任何现场（`#[cfg(test)]` 里的探测打印除外）。插件配置（落盘目录 / 5MB 轮转 / 保留 7 份 / 本地时区 / dev 终端）只在 `lib.rs` 注册处一处，细节见 `docs/技术说明.md` 的「统一日志」；日志里不得出现 Cookie 凭据
