@@ -85,12 +85,48 @@ pub struct Backing {
     pub wealth_level: Option<u32>,
 }
 
+/// 欢迎事件形态
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WelcomeKind {
+    /// 进入直播间（INTERACT_WORD_V2 msg_type=1）
+    Enter,
+    /// 关注（INTERACT_WORD_V2 msg_type=2）
+    Follow,
+    /// 分享（INTERACT_WORD_V2 msg_type=3）
+    Share,
+    /// 点赞（LIKE_INFO_V3_CLICK）
+    Like,
+    /// 舰长 / 提督 / 总督进场（ENTRY_EFFECT 且 guard_level>0）
+    GuardEnter,
+}
+
+/// 欢迎消息（进房 / 关注 / 分享 / 点赞 / 舰长进场）
+///
+/// 量级比弹幕大一个数量级（实测进房 : 弹幕 ≈ 10 : 1），单独一路事件：
+/// 不进弹幕速率统计（`state::record_danmaku`），也不参与弹幕筛选，
+/// 限流与去重由 `crate::welcome` 负责。
+#[derive(Debug, Clone, Serialize)]
+pub struct Welcome {
+    /// 去重标识（同人同一秒的同类事件算同一条）
+    pub id: String,
+    pub kind: WelcomeKind,
+    pub uid: i64,
+    pub username: String,
+    /// 事件时间（Unix 秒）
+    pub timestamp: i64,
+    /// 舰队等级：3 舰长 / 2 提督 / 1 总督；只有舰长进场事件带得出来
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub guard_level: Option<u32>,
+}
+
 /// 解析出的 B 站事件
 ///
-/// 未列入的命令（进场/通知等）在 parser 层直接忽略，
+/// 未列入的命令（在线榜、看过人数、全网广播等）在 parser 层直接忽略，
 /// 避免高频事件流造成日志洪泛与无谓分配
 #[derive(Debug, Clone)]
 pub enum BilibiliEvent {
     Danmaku(Danmaku),
     Backing(Backing),
+    Welcome(Welcome),
 }

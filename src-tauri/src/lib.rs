@@ -15,6 +15,7 @@ mod gift;
 mod state;
 mod tts;
 mod update;
+mod welcome;
 mod window;
 
 use state::{AppState, OverlayState};
@@ -71,6 +72,7 @@ pub fn run() {
         .manage(OverlayState::default())
         .manage(tts::TtsState::new(config::TtsConfig::default()))
         .manage(gift::GiftState::default())
+        .manage(welcome::WelcomeState::default())
         .setup(|app| {
             // 加载持久化配置：登录态 → AppState.auth；样式/位置 → OverlayState
             let cfg = config::load_config(app.handle());
