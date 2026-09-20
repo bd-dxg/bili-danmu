@@ -296,6 +296,7 @@ onUnmounted(() => {
       fontFamily: style.font_family,
       rowGap: style.row_gap + 'px',
     }"
+    @contextmenu.prevent
     data-tauri-drag-region>
     <!-- 常驻透明拖拽条：不在弹幕流内，弹幕高速刷新时也能稳定拖动窗口；移入时显示操作提示 -->
     <div class="drag-strip" data-tauri-drag-region>
