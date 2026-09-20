@@ -95,7 +95,7 @@
 - 登录 Cookie 在 `config.rs` 的 `save_config_unlocked`（唯一写盘边界）统一 **DPAPI 加密**（`dpapi:` 前缀 + hex）落盘，加解密在 `config/crypto.rs`，读取自动解密（旧版明文无前缀兼容）：任何新增的敏感字段必须走同类加密，勿明文落盘；内存态保持明文
 - `config.rs` 读写持有全局互斥（save_* 均为 load-modify-save）：新增保存函数须沿用 `lock_cfg()` + `*_unlocked` 模式，勿在持锁时调用加锁公共入口（std Mutex 不可重入）
 - 断线自动重连在 `connection.rs` `spawn_connection`（1/2/4/…/30s 退避、10 次上限）；改连接收尾逻辑时保留取消令牌身份检查（`finish_connection`），否则旧任务会误清新连接状态
-- 发送弹幕需登录态（`bili_jct` 做 CSRF 签名，游客无 bili_jct 会报错）；发送框窗口始终吸附 Overlay 下方（`window.rs` `sync_sender_docked`），**左端与面板背景左边缘同一条线**（6px padding + `--panel-inset` 5.15em，不再对齐正文列）、**宽度取面板宽度的 80%**、高度随弹幕字号缩放——改 Overlay 布局（容器 padding、`--role-indent` / `--panel-inset`）时须同步 `sender_layout_metrics` 里的这几个系数
+- 发送弹幕需登录态（`bili_jct` 做 CSRF 签名，游客无 bili_jct 会报错）；发送框窗口始终吸附 Overlay 下方（`window.rs` `sync_sender_docked`），**左端与面板背景左边缘同一条线**（6px padding + `--panel-inset` 5.15em，不再对齐正文列）、**宽度取面板宽度的 50%（上限 260px）**、高度随弹幕字号缩放；右端带「穿透」开关按钮（发送框是独立窗口，穿透开启后仍可点，是关掉穿透的唯一入口）——改 Overlay 布局（容器 padding、`--role-indent` / `--panel-inset`）时须同步 `sender_layout_metrics` 里的这几个系数。弹幕窗与发送框均用 `@contextmenu.prevent` 屏蔽右键菜单
 - 朗读与显示是**两套独立的 `DanmakuFilter`**（`danmaku_filter` / `tts.filter`）：显示筛选在前端 Overlay 做，朗读筛选在 Rust `tts::on_danmaku` 做，改任一侧别把两者耦合成一份配置
 - `src/styles/settings.css` 是**全局样式**（无 scoped），类名是主窗口所有页面的共用契约：往里加规则前先确认不和已有页面的类名撞车（`StatusDashboard` 的 `.tip` 就因此改名 `.dashboard-tip`）；页面独有的差异项（如 `.select` 的 min-width）留在各自组件的 scoped 样式里覆盖
 - `DisplayDanmaku`（弹幕事件 + `isRoomMedal` 派生标记）定义在 `types/ipc.ts`，Overlay 列表与 `DanmakuRow` 共用

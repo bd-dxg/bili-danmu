@@ -10,6 +10,8 @@ const sending = ref(false)
 const sendError = ref('')
 const loggedIn = ref(false)
 const connected = ref(false)
+// 鼠标穿透是否开启：开关按钮在发送框右端，发送框是独立窗口，穿透开启后仍可点
+const clickthrough = ref(false)
 // 弹幕字号（与弹幕窗统一，界面元素按 em 相对缩放）
 const fontSize = ref(17)
 
@@ -34,6 +36,15 @@ async function sendDanmaku() {
   }
 }
 
+/** 切换鼠标穿透（穿透开启后本按钮是唯一能关掉它的入口） */
+async function toggleClickthrough() {
+  try {
+    clickthrough.value = await invoke<boolean>('overlay_set_clickthrough', { enabled: !clickthrough.value })
+  } catch (e) {
+    sendError.value = String(e)
+  }
+}
+
 async function poll() {
   try {
     const info = await invoke<{ loggedIn: boolean }>('get_login_info')
@@ -44,6 +55,11 @@ async function poll() {
   try {
     const st = await invoke<RoomStatusEvent>('get_connection_status')
     connected.value = st.state === 'connected'
+  } catch {
+    /* ignore */
+  }
+  try {
+    clickthrough.value = await invoke<boolean>('overlay_get_clickthrough')
   } catch {
     /* ignore */
   }
@@ -74,15 +90,25 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="sender-root" :style="{ fontSize: fontSize + 'px' }">
-    <input
-      v-model="danmakuText"
-      class="send-input"
-      type="text"
-      placeholder="输入弹幕，回车发送"
-      maxlength="100"
-      :disabled="!canSend"
-      @keyup.enter="sendDanmaku" />
+  <div class="sender-root" :style="{ fontSize: fontSize + 'px' }" @contextmenu.prevent>
+    <div class="input-row">
+      <input
+        v-model="danmakuText"
+        class="send-input"
+        type="text"
+        placeholder="输入弹幕，回车发送"
+        maxlength="100"
+        :disabled="!canSend"
+        @keyup.enter="sendDanmaku" />
+      <button
+        type="button"
+        class="ct-btn"
+        :class="{ on: clickthrough }"
+        :title="clickthrough ? '鼠标穿透：开（点击关闭）' : '鼠标穿透：关（点击开启）'"
+        @click="toggleClickthrough">
+        穿透
+      </button>
+    </div>
     <div v-if="sendError" class="status-line">
       <span class="err">{{ sendError }}</span>
     </div>
@@ -99,8 +125,15 @@ onUnmounted(() => {
   padding: 0.25em 0;
 }
 
+.input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+}
+
 .send-input {
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   appearance: none;
   -webkit-appearance: none;
   background: rgba(0, 0, 0, 0.55);
@@ -120,6 +153,36 @@ onUnmounted(() => {
 .send-input:focus {
   border-color: rgba(120, 180, 255, 0.95);
   border-radius: 0.4em;
+}
+
+/* 穿透开关：发送框是独立窗口，穿透开启后本按钮仍可点击，是「关掉穿透」的唯一入口 */
+.ct-btn {
+  flex: 0 0 auto;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: 0.85em;
+  font-family: inherit;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(0, 0, 0, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 0.4em;
+  padding: 0.4em 0.6em;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.ct-btn:hover {
+  border-color: rgba(255, 255, 255, 0.6);
+}
+
+.ct-btn.on {
+  color: #fff;
+  background: rgba(120, 180, 255, 0.55);
+  border-color: rgba(120, 180, 255, 0.95);
 }
 
 .status-line {
