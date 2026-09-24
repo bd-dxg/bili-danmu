@@ -1,6 +1,4 @@
 <script setup lang="ts">
-import { defineProps, defineEmits } from 'vue'
-
 const props = defineProps<{
   overlayVisible: boolean
   overlayClickthrough: boolean
@@ -56,6 +54,10 @@ function toggleWelcomeEnabled() {
 function toggleWelcomeTtsGuard() {
   emit('update:welcomeTtsGuard', !props.welcomeTtsGuard)
 }
+
+function onFontSizeInput(v: number) {
+  emit('update:fontSize', v)
+}
 </script>
 
 <template>
@@ -89,7 +91,7 @@ function toggleWelcomeTtsGuard() {
         <span class="label">礼物/欢迎</span>
         <button class="btn-switch" :class="{ on: giftEnabled }" @click="toggleGiftEnabled">礼物</button>
         <button class="btn-switch" :class="{ on: welcomeEnabled }" @click="toggleWelcomeEnabled">欢迎</button>
-        <button class="btn-switch" :class="{ on: welcomeTtsGuard }" @click="toggleWelcomeTtsGuard">舰长</button>
+        <button class="btn-switch" :class="{ on: welcomeTtsGuard }}" @click="toggleWelcomeTtsGuard">舰长</button>
       </div>
     </div>
 
@@ -98,11 +100,11 @@ function toggleWelcomeTtsGuard() {
       <span class="label">字号</span>
       <input
         type="range"
-        v-model.number="fontSize"
+        :value="fontSize"
         min="13"
         max="36"
         step="1"
-        @input="$emit('update:fontSize', fontSize)"
+        @input="e => onFontSizeInput(Number(e.target.value))"
         class="font-slider" />
       <span class="font-value">{{ fontSize }}px</span>
     </div>
