@@ -10,6 +10,7 @@ import SettingRow from './SettingRow.vue'
 // 状态全部留在本组件内（与弹幕样式、弹幕过滤无耦合），父页面只管挂载。
 // 设置卡片、设置行与开关的样式来自全局 styles/settings.css；
 // 失败提示用独立的 .panel-error，避免与页面的 .error 样式互相影响。
+
 const winSize = ref({ width: 480, height: 240 })
 // 始终置顶没有 getter，初值沿用创建窗口时的 true
 const ov = ref({ visible: false, clickthrough: true, alwaysOnTop: true })
@@ -17,6 +18,10 @@ const errMsg = ref('')
 let errTimer: ReturnType<typeof setTimeout> | undefined
 // 窗口被手动拖动边缘缩放时由 Rust 广播 overlay-size 同步过来
 let unlistenSize: UnlistenFn | undefined
+// 监听外部状态变更（来自快捷控制卡片）
+let unlistenVisible: UnlistenFn | undefined
+let unlistenClickthrough: UnlistenFn | undefined
+let unlistenAlwaysOnTop: UnlistenFn | undefined
 
 /** 操作失败就地提示（3s 后自动消失），不打断页面其它区域的保存提示 */
 function fail(e: unknown) {
@@ -73,6 +78,15 @@ onMounted(async () => {
   unlistenSize = await listen<{ width: number; height: number }>('overlay-size', e => {
     winSize.value = e.payload
   })
+  unlistenVisible = await listen<boolean>('overlay-visible', v => {
+    ov.value.visible = v
+  })
+  unlistenClickthrough = await listen<boolean>('overlay-clickthrough', v => {
+    ov.value.clickthrough = v
+  })
+  unlistenAlwaysOnTop = await listen<boolean>('overlay-always-on-top', v => {
+    ov.value.alwaysOnTop = v
+  })
   try {
     winSize.value = await invoke<{ width: number; height: number }>('overlay_get_size')
   } catch (e) {
@@ -88,6 +102,9 @@ onMounted(async () => {
 
 onUnmounted(() => {
   unlistenSize?.()
+  unlistenVisible?.()
+  unlistenClickthrough?.()
+  unlistenAlwaysOnTop?.()
   if (errTimer) clearTimeout(errTimer)
 })
 </script>

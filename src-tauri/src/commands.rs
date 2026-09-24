@@ -26,6 +26,7 @@ pub(crate) fn overlay_set_visible(app: AppHandle, visible: bool) -> Result<bool,
     } else {
         win.hide().map_err(|e| format!("隐藏失败: {e}"))?;
     }
+    let _ = app.emit("overlay-visible", &visible);
     Ok(visible)
 }
 
@@ -40,6 +41,7 @@ pub(crate) fn overlay_set_clickthrough(
     win.set_ignore_cursor_events(enabled)
         .map_err(|e| format!("设置穿透失败: {e}"))?;
     *state.clickthrough.lock().unwrap() = enabled;
+    let _ = app.emit("overlay-clickthrough", &enabled);
     Ok(enabled)
 }
 
@@ -68,6 +70,7 @@ pub(crate) fn overlay_set_always_on_top(
     win.set_always_on_top(enabled)
         .map_err(|e| format!("设置置顶失败: {e}"))?;
     *state.always_on_top.lock().unwrap() = enabled;
+    let _ = app.emit("overlay-always-on-top", &enabled);
     Ok(enabled)
 }
 
@@ -171,6 +174,7 @@ pub(crate) fn gift_tts_set_config(
     gift_tts: config::GiftTtsConfig,
 ) -> Result<(), String> {
     state.set_gift_config(gift_tts.clone());
+    let _ = app.emit("gift-tts-config", &gift_tts);
     config::save_gift_tts_config(&app, &gift_tts)
 }
 
@@ -329,6 +333,7 @@ pub(crate) fn tts_set_config(
     tts: config::TtsConfig,
 ) -> Result<(), String> {
     state.set_config(tts.clone());
+    let _ = app.emit("tts-config", &tts);
     config::save_tts_config(&app, &tts)
 }
 

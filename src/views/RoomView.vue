@@ -1,9 +1,13 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { onMounted, onUnmounted, ref } from 'vue'
 
-import StatusDashboard from '../components/StatusDashboard.vue'
+import QuickControl from '../components/QuickControl.vue'
 import { refreshLogin, useLogin } from '../composables/useLogin'
 import { useRoomConnection } from '../composables/useRoomConnection'
+
+import type { TtsConfig, GiftTtsConfig, GiftConfig, WelcomeConfig, OverlayStyle } from '../types/ipc'
 
 onMounted(refreshLogin)
 
@@ -16,6 +20,133 @@ async function handleLogout() {
     await disconnect()
   }
   await logout()
+}
+
+// 快捷控制相关状态
+const overlayVisible = ref(true)
+const overlayClickthrough = ref(true)
+const overlayAlwaysOnTop = ref(true)
+const ttsEnabled = ref(false)
+const giftTtsEnabled = ref(false)
+const giftEnabled = ref(true)
+const welcomeEnabled = ref(false)
+const welcomeTtsGuard = ref(false)
+const fontSize = ref(17)
+let unlistenOverlayVisible: UnlistenFn | undefined
+let unlistenOverlayClickthrough: UnlistenFn | undefined
+let unlistenOverlayAlwaysOnTop: UnlistenFn | undefined
+let unlistenTtsConfig: UnlistenFn | undefined
+let unlistenGiftTtsConfig: UnlistenFn | undefined
+let unlistenGiftConfig: UnlistenFn | undefined
+let unlistenWelcomeConfig: UnlistenFn | undefined
+let unlistenFontSize: UnlistenFn | undefined
+
+async function loadInitialState() {
+  // 用 get_dashboard_status 拉初始状态，所有开关的初始值都在这里统一获取
+  try {
+    const status = await invoke('get_dashboard_status')
+    overlayVisible.value = status.overlay.visible
+    overlayClickthrough.value = status.overlay.clickthrough
+    overlayAlwaysOnTop.value = status.overlay.always_on_top
+  } catch {}
+  try {
+    const cfg = await invoke<TtsConfig>('tts_get_config')
+    ttsEnabled.value = cfg.enabled
+  } catch {}
+  try {
+    const cfg = await invoke<GiftTtsConfig>('gift_tts_get_config')
+    giftTtsEnabled.value = cfg.enabled
+  } catch {}
+  try {
+    const cfg = await invoke<GiftConfig>('gift_get_config')
+    giftEnabled.value = cfg.enabled
+  } catch {}
+  try {
+    const cfg = await invoke<WelcomeConfig>('welcome_get_config')
+    welcomeEnabled.value = cfg.enabled
+    welcomeTtsGuard.value = cfg.tts_guard
+  } catch {}
+  try {
+    const style = await invoke<OverlayStyle>('overlay_get_style')
+    fontSize.value = style.font_size
+  } catch {}
+}
+
+onMounted(async () => {
+  await loadInitialState()
+  unlistenOverlayVisible = await listen<boolean>('overlay-visible', v => {
+    overlayVisible.value = v
+  })
+  unlistenOverlayClickthrough = await listen<boolean>('overlay-clickthrough', v => {
+    overlayClickthrough.value = v
+  })
+  unlistenOverlayAlwaysOnTop = await listen<boolean>('overlay-always-on-top', v => {
+    overlayAlwaysOnTop.value = v
+  })
+  unlistenTtsConfig = await listen<TtsConfig>('tts-config', cfg => {
+    ttsEnabled.value = cfg.enabled
+  })
+  unlistenGiftTtsConfig = await listen<GiftTtsConfig>('gift-tts-config', cfg => {
+    giftTtsEnabled.value = cfg.enabled
+  })
+  unlistenGiftConfig = await listen<GiftConfig>('gift-config', cfg => {
+    giftEnabled.value = cfg.enabled
+  })
+  unlistenWelcomeConfig = await listen<WelcomeConfig>('welcome-config', cfg => {
+    welcomeEnabled.value = cfg.enabled
+    welcomeTtsGuard.value = cfg.tts_guard
+  })
+  // 字号变化由 overlay_set_style 广播，监听 style 即可提取
+  unlistenFontSize = await listen<OverlayStyle>('overlay-style', style => {
+    fontSize.value = style.font_size
+  })
+})
+
+onUnmounted(() => {
+  unlistenOverlayVisible?.()
+  unlistenOverlayClickthrough?.()
+  unlistenOverlayAlwaysOnTop?.()
+  unlistenTtsConfig?.()
+  unlistenGiftTtsConfig?.()
+  unlistenGiftConfig?.()
+  unlistenWelcomeConfig?.()
+  unlistenFontSize?.()
+})
+
+// 快捷控制修改函数
+async function setOverlayVisible(v: boolean) {
+  await invoke('overlay_set_visible', { visible: v })
+}
+async function setOverlayClickthrough(v: boolean) {
+  await invoke('overlay_set_clickthrough', { enabled: v })
+}
+async function setOverlayAlwaysOnTop(v: boolean) {
+  await invoke('overlay_set_always_on_top', { enabled: v })
+}
+async function setTtsEnabled(v: boolean) {
+  await invoke('tts_set_config', { tts: { ...(await invoke<TtsConfig>('tts_get_config')), enabled: v } })
+}
+async function setGiftTtsEnabled(v: boolean) {
+  await invoke('gift_tts_set_config', {
+    giftTts: { ...(await invoke<GiftTtsConfig>('gift_tts_get_config')), enabled: v },
+  })
+}
+async function setGiftEnabled(v: boolean) {
+  await invoke('gift_set_config', { gift: { ...(await invoke<GiftConfig>('gift_get_config')), enabled: v } })
+}
+async function setWelcomeEnabled(v: boolean) {
+  await invoke('welcome_set_config', {
+    welcome: { ...(await invoke<WelcomeConfig>('welcome_get_config')), enabled: v },
+  })
+}
+async function setWelcomeTtsGuard(v: boolean) {
+  await invoke('welcome_set_config', {
+    welcome: { ...(await invoke<WelcomeConfig>('welcome_get_config')), tts_guard: v },
+  })
+}
+async function setFontSize(v: number) {
+  const style = { ...(await invoke<OverlayStyle>('overlay_get_style')), font_size: v }
+  await invoke('overlay_set_style', { style })
 }
 </script>
 
@@ -82,7 +213,26 @@ async function handleLogout() {
       </span>
     </div>
 
-    <StatusDashboard />
+    <!-- 快捷控制卡片 -->
+    <QuickControl
+      :overlay-visible="overlayVisible"
+      :overlay-clickthrough="overlayClickthrough"
+      :overlay-always-on-top="overlayAlwaysOnTop"
+      :tts-enabled="ttsEnabled"
+      :gift-tts-enabled="giftTtsEnabled"
+      :gift-enabled="giftEnabled"
+      :welcome-enabled="welcomeEnabled"
+      :welcome-tts-guard="welcomeTtsGuard"
+      :font-size="fontSize"
+      @update:overlay-visible="setOverlayVisible"
+      @update:overlay-clickthrough="setOverlayClickthrough"
+      @update:overlay-always-on-top="setOverlayAlwaysOnTop"
+      @update:tts-enabled="setTtsEnabled"
+      @update:gift-tts-enabled="setGiftTtsEnabled"
+      @update:gift-enabled="setGiftEnabled"
+      @update:welcome-enabled="setWelcomeEnabled"
+      @update:welcome-tts-guard="setWelcomeTtsGuard"
+      @update:font-size="setFontSize" />
   </div>
 </template>
 
