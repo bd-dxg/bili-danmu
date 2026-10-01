@@ -124,6 +124,9 @@ pub fn run() {
             }
             if let Ok(win) = win_builder.build() {
                 let app2 = app.handle().clone();
+                // 播种初始尺寸：窗口建好后先把真实 bounds 写进内存态（顺带广播一次 overlay-size），
+                // 否则前端启动时读 overlay_get_size 会撞上「窗口还没建好」的竞态、滑块停在默认值
+                capture_overlay_bounds(&app2);
                 win.on_window_event(move |event| {
                     if matches!(
                         event,

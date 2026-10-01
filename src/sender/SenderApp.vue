@@ -17,6 +17,8 @@ const fontSize = ref(17)
 
 let unlistenRoom: UnlistenFn | undefined
 let unlistenStyle: UnlistenFn | undefined
+// 穿透从主界面那一侧被改动时由 Rust 广播过来（两个入口必须双向同步）
+let unlistenClickthrough: UnlistenFn | undefined
 let pollTimer: ReturnType<typeof setInterval> | undefined
 
 const canSend = computed(() => loggedIn.value && connected.value)
@@ -72,6 +74,9 @@ onMounted(async () => {
   unlistenStyle = await listen<OverlayStyle>('overlay-style', e => {
     fontSize.value = e.payload.font_size
   })
+  unlistenClickthrough = await listen<boolean>('overlay-clickthrough', e => {
+    clickthrough.value = e.payload
+  })
   try {
     const s = await invoke<OverlayStyle>('overlay_get_style')
     fontSize.value = s.font_size
@@ -86,6 +91,7 @@ onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer)
   unlistenRoom?.()
   unlistenStyle?.()
+  unlistenClickthrough?.()
 })
 </script>
 
