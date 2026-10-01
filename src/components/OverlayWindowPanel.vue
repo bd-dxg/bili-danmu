@@ -11,12 +11,16 @@ import SettingRow from './SettingRow.vue'
 // 设置卡片、设置行与开关的样式来自全局 styles/settings.css；
 // 失败提示用独立的 .panel-error，避免与页面的 .error 样式互相影响。
 const winSize = ref({ width: 480, height: 240 })
-// 始终置顶没有 getter，初值沿用创建窗口时的 true
-const ov = ref({ visible: false, clickthrough: true, alwaysOnTop: true })
+// 三个开关的初值与 Rust 侧 OverlayState 的默认值一致（创建窗口时就是这三态），
+// 避免读到真实状态前先闪一下错误勾选；挂载后再用命令读一次对齐
+const ov = ref({ visible: true, clickthrough: false, alwaysOnTop: true })
 const errMsg = ref('')
 let errTimer: ReturnType<typeof setTimeout> | undefined
 // 窗口被手动拖动边缘缩放时由 Rust 广播 overlay-size 同步过来
 let unlistenSize: UnlistenFn | undefined
+// 开关从发送框那一侧被改动时由 Rust 广播过来（两个入口必须双向同步）
+let unlistenVisible: UnlistenFn | undefined
+let unlistenClickthrough: UnlistenFn | undefined
 
 /** 操作失败就地提示（3s 后自动消失），不打断页面其它区域的保存提示 */
 function fail(e: unknown) {
@@ -73,6 +77,12 @@ onMounted(async () => {
   unlistenSize = await listen<{ width: number; height: number }>('overlay-size', e => {
     winSize.value = e.payload
   })
+  unlistenVisible = await listen<boolean>('overlay-visible', e => {
+    ov.value.visible = e.payload
+  })
+  unlistenClickthrough = await listen<boolean>('overlay-clickthrough', e => {
+    ov.value.clickthrough = e.payload
+  })
   try {
     winSize.value = await invoke<{ width: number; height: number }>('overlay_get_size')
   } catch (e) {
@@ -88,6 +98,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   unlistenSize?.()
+  unlistenVisible?.()
+  unlistenClickthrough?.()
   if (errTimer) clearTimeout(errTimer)
 })
 </script>

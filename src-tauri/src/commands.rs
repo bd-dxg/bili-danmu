@@ -18,14 +18,23 @@ pub(crate) fn ping() -> String {
 }
 
 /// 显示 / 隐藏 Overlay（返回新可见状态）
+///
+/// 可见性写内存态并广播 `overlay-visible`：设置页与发送框都可能改它，
+/// 且前端启动时就会读一次（此时窗口未必已创建），一律以内存态为准
 #[tauri::command]
-pub(crate) fn overlay_set_visible(app: AppHandle, visible: bool) -> Result<bool, String> {
+pub(crate) fn overlay_set_visible(
+    app: AppHandle,
+    state: State<'_, OverlayState>,
+    visible: bool,
+) -> Result<bool, String> {
     let win = overlay_window(&app).ok_or("Overlay 窗口未创建")?;
     if visible {
         win.show().map_err(|e| format!("显示失败: {e}"))?;
     } else {
         win.hide().map_err(|e| format!("隐藏失败: {e}"))?;
     }
+    *state.visible.lock().unwrap() = visible;
+    let _ = app.emit("overlay-visible", visible);
     Ok(visible)
 }
 
@@ -40,6 +49,8 @@ pub(crate) fn overlay_set_clickthrough(
     win.set_ignore_cursor_events(enabled)
         .map_err(|e| format!("设置穿透失败: {e}"))?;
     *state.clickthrough.lock().unwrap() = enabled;
+    // 广播：穿透开关有两个入口（主界面「弹幕窗」标签、发送框右端按钮），另一侧要跟着更新
+    let _ = app.emit("overlay-clickthrough", enabled);
     Ok(enabled)
 }
 
@@ -49,12 +60,10 @@ pub(crate) fn overlay_get_clickthrough(state: State<'_, OverlayState>) -> bool {
     *state.clickthrough.lock().unwrap()
 }
 
-/// 查询 Overlay 是否可见
+/// 查询 Overlay 是否可见（读内存态，不查窗口：窗口未必已创建，见 `OverlayState::visible`）
 #[tauri::command]
-pub(crate) fn overlay_is_visible(app: AppHandle) -> bool {
-    overlay_window(&app)
-        .and_then(|w| w.is_visible().ok())
-        .unwrap_or(false)
+pub(crate) fn overlay_is_visible(state: State<'_, OverlayState>) -> bool {
+    *state.visible.lock().unwrap()
 }
 
 /// 开关始终置顶
@@ -77,7 +86,7 @@ pub(crate) fn get_dashboard_status(app: AppHandle) -> serde_json::Value {
     let overlay = {
         let st = app.state::<OverlayState>();
         json!({
-            "visible": overlay_window(&app).and_then(|w| w.is_visible().ok()).unwrap_or(false),
+            "visible": *st.visible.lock().unwrap(),
             "clickthrough": *st.clickthrough.lock().unwrap(),
             "always_on_top": *st.always_on_top.lock().unwrap(),
         })
@@ -196,16 +205,16 @@ pub(crate) fn welcome_set_config(
 }
 
 /// 查询 Overlay 当前尺寸（逻辑像素，与 overlay_set_size 同一口径）
+///
+/// 读内存态 `bounds`：窗口建好后由 `capture_overlay_bounds` 播种并随移动 / 缩放持续更新，
+/// 直接查窗口 API 会有与 `overlay_is_visible` 相同的启动竞态（前端启动时窗口未必创建完）
 #[tauri::command]
-pub(crate) fn overlay_get_size(app: AppHandle) -> Result<serde_json::Value, String> {
-    let win = overlay_window(&app).ok_or("Overlay 窗口未创建")?;
-    let scale = win.scale_factor().map_err(|e| format!("读取缩放失败: {e}"))?;
-    // inner_size 是物理像素，高 DPI 下得先换算，否则滑块显示的数会比实际小
-    let size = win
-        .inner_size()
-        .map_err(|e| format!("读取尺寸失败: {e}"))?
-        .to_logical::<f64>(scale);
-    Ok(json!({ "width": size.width.round(), "height": size.height.round() }))
+pub(crate) fn overlay_get_size(state: State<'_, OverlayState>) -> Result<serde_json::Value, String> {
+    let b = state.bounds.lock().unwrap();
+    match *b {
+        Some(b) => Ok(json!({ "width": b.w.round(), "height": b.h.round() })),
+        None => Err("弹幕窗尺寸尚未就绪".into()),
+    }
 }
 
 /// 调整 Overlay 宽高（设置页滑块调用；尺寸变化自动被窗口事件捕获落盘）
