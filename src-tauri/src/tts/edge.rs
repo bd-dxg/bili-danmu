@@ -18,8 +18,8 @@ use tokio_tungstenite::tungstenite::Message;
 
 /// 微软固定客户端令牌（Edge 浏览器内置，公开常量）
 const TRUSTED_CLIENT_TOKEN: &str = "6A5AA1D4EAFF4E9FB37E23D68491D6F4";
-/// DRM 版本串，格式 `1-<Chromium 完整版本号>`；跟随 Edge 更新即可
-const SEC_MS_GEC_VERSION: &str = "1-143.0.3650.75";
+/// DRM 版本串，格式 `<令牌版本>-<Chromium 完整版本号>`；v2 起必须与 `drm.rs` 的 v2 令牌配套
+const SEC_MS_GEC_VERSION: &str = "2-143.0.3650.75";
 /// 输出格式：服务端只支持 MP3 系列，raw PCM 会被直接断连（已实测）
 const OUTPUT_FORMAT: &str = "audio-24khz-48kbitrate-mono-mp3";
 /// 收流阶段超时（整条合成的总超时由调用方 `tts::SYNTH_TIMEOUT` 包住，含建连）
@@ -28,13 +28,15 @@ const RECV_TIMEOUT: Duration = Duration::from_secs(20);
 const ORIGIN: &str = "chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold";
 const USER_AGENT: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0";
 
+mod drm;
 mod ssml;
 mod util;
 mod voices;
 
 pub use voices::{builtin_voices, fetch_voices};
+use drm::{adjust_clock_skew, sec_ms_gec};
 use ssml::build_ssml;
-use util::{date_string, random_hex, sec_ms_gec};
+use util::{date_string, random_hex};
 
 /// Edge 服务端校验必需的公共请求头（WS 与 voices/list 共用）
 fn edge_headers() -> Vec<(&'static str, String)> {
@@ -83,11 +85,8 @@ async fn dial_tcp() -> Result<(tokio::net::TcpStream, std::net::SocketAddr), Str
     Err(format!("Edge TTS 所有地址均不可达（最后失败 {last_err}）"))
 }
 
-/// 建立一条 Edge TTS WebSocket（DRM 令牌 + 服务端校验必需的请求头）
-///
-/// 每条合成单独建连：服务端**不接受**同一条连接发多轮（实测第二轮直接 RST 10054），故不复用。
-/// 返回 WebSocket 与对端地址（便于失败时定位是哪条网络路径）。
-async fn connect() -> Result<(Ws, std::net::SocketAddr), String> {
+/// 一次握手尝试（不重试），把 403 单独分类出来供 `connect` 处理
+async fn connect_once() -> Result<(Ws, std::net::SocketAddr), ConnectError> {
     let url = format!(
         "wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1\
          ?TrustedClientToken={TRUSTED_CLIENT_TOKEN}\
@@ -99,7 +98,7 @@ async fn connect() -> Result<(Ws, std::net::SocketAddr), String> {
     );
     let mut req = url
         .into_client_request()
-        .map_err(|e| format!("构造 Edge TTS 请求失败: {e}"))?;
+        .map_err(|e| ConnectError::Other(format!("构造 Edge TTS 请求失败: {e}")))?;
     {
         let headers = req.headers_mut();
         for (key, value) in edge_headers() {
@@ -108,17 +107,72 @@ async fn connect() -> Result<(Ws, std::net::SocketAddr), String> {
             }
         }
     }
-    let (tcp, peer) = dial_tcp().await?;
-    let connector = native_tls::TlsConnector::new().map_err(|e| format!("初始化 TLS 失败: {e}"))?;
-    let (ws, _) = tokio_tungstenite::client_async_tls_with_config(
+    let (tcp, peer) = dial_tcp().await.map_err(ConnectError::Other)?;
+    let connector = native_tls::TlsConnector::new()
+        .map_err(|e| ConnectError::Other(format!("初始化 TLS 失败: {e}")))?;
+    let handshake = tokio_tungstenite::client_async_tls_with_config(
         req,
         tcp,
         None,
         Some(tokio_tungstenite::Connector::NativeTls(connector)),
     )
-    .await
-    .map_err(|e| format!("Edge TTS 连接失败（网络不可达或被限流）: {e}"))?;
-    Ok((ws, peer))
+    .await;
+    match handshake {
+        Ok((ws, _)) => Ok((ws, peer)),
+        // 403 时把响应头里的 `Date` 带回去，供上层校准时钟偏差
+        Err(tokio_tungstenite::tungstenite::Error::Http(resp))
+            if resp.status() == 403 =>
+        {
+            let date = resp
+                .headers()
+                .get("date")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string);
+            Err(ConnectError::Forbidden(date))
+        }
+        Err(e) => Err(ConnectError::Other(format!(
+            "Edge TTS 连接失败（网络不可达或被限流）: {e}"
+        ))),
+    }
+}
+
+/// 握手失败的分类：403 能靠响应头的 `Date` 校准时钟偏差，其余只能上报
+enum ConnectError {
+    Forbidden(Option<String>),
+    Other(String),
+}
+
+impl ConnectError {
+    fn into_message(self) -> String {
+        match self {
+            Self::Forbidden(_) => {
+                "Edge TTS 握手被 403 拒绝（本机时钟偏差超过 5 分钟时令牌算错；也可能是本机 IP 被限流）"
+                    .to_string()
+            }
+            Self::Other(msg) => msg,
+        }
+    }
+}
+
+/// 建立一条 Edge TTS WebSocket（DRM 令牌 + 服务端校验必需的请求头）
+///
+/// 每条合成单独建连：服务端**不接受**同一条连接发多轮（实测第二轮直接 RST 10054），故不复用。
+/// 返回 WebSocket 与对端地址（便于失败时定位是哪条网络路径）。
+///
+/// 握手被 403 拒绝时，按服务端 `Date` 头校准本机时钟偏差后**重试一次**（官方 `DRM` 同款做法）：
+/// 时钟偏差超过令牌的 5 分钟窗口时怎么算都错，表面上就是「朗读全挂、弹幕一切正常」。
+async fn connect() -> Result<(Ws, std::net::SocketAddr), String> {
+    match connect_once().await {
+        Ok(pair) => Ok(pair),
+        Err(ConnectError::Forbidden(date)) => {
+            if !date.as_deref().is_some_and(adjust_clock_skew) {
+                return Err(ConnectError::Forbidden(None).into_message());
+            }
+            log::warn!("Edge TTS 握手 403，已按服务端时间校准本机时钟偏差，重试一次");
+            connect_once().await.map_err(ConnectError::into_message)
+        }
+        Err(e) => Err(e.into_message()),
+    }
 }
 
 /// speech.config 帧：声明输出格式（每轮合成前都要先发）
@@ -225,11 +279,41 @@ pub async fn synthesize(
         .map_err(|e| format!("{e}（对端 {peer}）"))
 }
 
-/// DRM 令牌：时间戳切到 Windows FILETIME 纪元、向下取整到 5 分钟、转 100ns 单位后
-/// 与固定客户端令牌拼接做 SHA256，取大写 hex
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 版本串与 UA 必须指向同一个 Chromium 版本（跟 Edge 升级时容易只改一处），
+    /// 以版本串为真源反推主版本号、再回查 UA
+    #[test]
+    fn chromium_version_is_consistent() {
+        assert!(
+            SEC_MS_GEC_VERSION.starts_with("2-"),
+            "v2 令牌必须配 2- 前缀"
+        );
+        let full = SEC_MS_GEC_VERSION.trim_start_matches("2-");
+        let major = full.split('.').next().expect("版本串应含主版本号");
+        assert!(USER_AGENT.contains(&format!("Chrome/{major}.0.0.0")));
+        assert!(USER_AGENT.contains(&format!("Edg/{major}.0.0.0")));
+    }
+
+    /// 真实联网：人为把本机时钟拨偏 10 分钟（超过令牌的 5 分钟窗口），验证 403 → 按 Date 头校准 → 重试成功
+    /// `cargo test --lib -- --ignored edge_recovers_from_clock_skew_live --nocapture`
+    #[test]
+    #[ignore]
+    fn edge_recovers_from_clock_skew_live() {
+        tauri::async_runtime::block_on(async {
+            let before = drm::skew_calibrations();
+            drm::set_clock_skew_seconds(600.0);
+            let result = synthesize("zh-CN-XiaoxiaoNeural", 0, 0, "时钟偏差恢复测试").await;
+            drm::set_clock_skew_seconds(0.0);
+            assert!(
+                drm::skew_calibrations() > before,
+                "没有触发时钟校准：服务端未因时间偏差 403，这条路径没验证到"
+            );
+            assert!(result.is_ok(), "校准后仍未恢复: {:?}", result.err());
+        });
+    }
 
     /// 真实联网突发测试：同一进程内连续 10 条、无间隔，统计失败率
     /// （定位「高频时 10054 / 超时」是本机频率问题还是服务端限流）

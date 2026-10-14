@@ -2,24 +2,9 @@
 //!
 //! 只放无状态的纯函数工具，与 Edge TTS 协议无关的逻辑不要加进来。
 
-use super::TRUSTED_CLIENT_TOKEN;
 use sha2::{Digest, Sha256};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
-
-/// Windows FILETIME 纪元（1601-01-01）相对 Unix 纪元的秒数
-const WIN_EPOCH: i64 = 11_644_473_600;
-
-/// DRM 令牌：时间戳切到 Windows FILETIME 纪元、向下取整到 5 分钟、转 100ns 单位后
-/// 与固定客户端令牌拼接做 SHA256，取大写 hex
-pub fn sec_ms_gec() -> String {
-    let mut ticks = unix_secs() + WIN_EPOCH;
-    ticks -= ticks % 300;
-    let ticks = ticks * 10_000_000;
-    let mut hasher = Sha256::new();
-    hasher.update(format!("{ticks}{TRUSTED_CLIENT_TOKEN}").as_bytes());
-    hex(&hasher.finalize(), true)
-}
 
 /// JavaScript 风格时间串（服务端照 Edge 的格式校验）：
 /// `Sat Nov 15 2025 10:00:00 GMT+0000 (Coordinated Universal Time)`
@@ -40,6 +25,17 @@ pub fn date_string() -> String {
         today % 3600 / 60,
         today % 60,
     )
+}
+
+/// (年, 月, 日) → Unix 天数，Howard Hinnant 的 days_from_civil 算法（`civil_from_days` 的逆）
+pub fn days_from_civil(year: i64, month: u32, day: u32) -> i64 {
+    let m = month as i64;
+    let y = if m <= 2 { year - 1 } else { year };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + day as i64 - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
 }
 
 /// Unix 天数 → (年, 月, 日)，Howard Hinnant 的 civil_from_days 算法
@@ -95,25 +91,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sec_ms_gec_is_upper_hex_sha256() {
-        let token = sec_ms_gec();
-        assert_eq!(token.len(), 64);
-        assert!(token.chars().all(|c| c.is_ascii_hexdigit()));
-        assert!(token.chars().all(|c| !c.is_ascii_lowercase()));
-    }
-
-    #[test]
-    fn sec_ms_gec_rounds_down_to_five_minutes() {
-        // 同一 5 分钟窗口内算两次必须一致（窗口切换瞬间可能不等，用两次快速取样降低概率）
-        let first = sec_ms_gec();
-        assert_eq!(first, sec_ms_gec());
-    }
-
-    #[test]
     fn civil_from_days_matches_known_dates() {
         assert_eq!(civil_from_days(0), (1970, 1, 1));
         assert_eq!(civil_from_days(19_723), (2024, 1, 1));
         assert_eq!(civil_from_days(-1), (1969, 12, 31));
+    }
+
+    #[test]
+    fn days_from_civil_inverts_civil_from_days() {
+        assert_eq!(days_from_civil(1970, 1, 1), 0);
+        assert_eq!(days_from_civil(2024, 1, 1), 19_723);
+        for days in [-1, 1, 10_000, -10_000] {
+            let (year, month, day) = civil_from_days(days);
+            assert_eq!(days_from_civil(year, month, day), days);
+        }
     }
 
     #[test]
