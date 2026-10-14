@@ -2,7 +2,7 @@
 //!
 //! 显示名与排序规则见各函数注释；协议与合成在父模块 `edge.rs`。
 
-use super::util::sec_ms_gec;
+use super::drm::sec_ms_gec;
 use super::{edge_headers, SEC_MS_GEC_VERSION, TRUSTED_CLIENT_TOKEN, USER_AGENT};
 use serde::Deserialize;
 

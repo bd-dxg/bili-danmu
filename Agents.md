@@ -68,7 +68,7 @@
   - `src-tauri/src/` Rust 核心：
     - `lib.rs` 组装（状态托管、窗口创建、托盘、命令注册）、`state.rs` 内存状态、`commands.rs` IPC 命令、`connection.rs` 连接与断线重连、`window.rs` 窗口辅助与发送框吸附
     - `bilibili/`：`protocol.rs` 协议包、`parser.rs` 解压/解析、`api.rs` HTTP 接口（房间解析、弹幕配置、主播名）、`ws.rs` WebSocket 会话、`wbi.rs` 签名、`login.rs` 扫码登录、`send.rs` 发送弹幕、`event.rs` 事件
-    - `tts/`：`mod.rs` 队列状态与入口钩子（`on_danmaku` / `on_backing`）、`text.rs` 筛选/清洗/组装文案（弹幕与打赏各一个组装函数）、`gift.rs` 礼物朗读的连击聚合与静默窗口、`worker.rs` 合成与播放流水线、`player.rs` winmm MCI 播放、`edge.rs` Edge TTS 协议、`edge/voices.rs` 音色表、`edge/ssml.rs` SSML 构造、`edge/util.rs` 时间与编码工具
+    - `tts/`：`mod.rs` 队列状态与入口钩子（`on_danmaku` / `on_backing`）、`text.rs` 筛选/清洗/组装文案（弹幕与打赏各一个组装函数）、`gift.rs` 礼物朗读的连击聚合与静默窗口、`worker.rs` 合成与播放流水线、`player.rs` winmm MCI 播放、`edge.rs` Edge TTS 协议、`edge/drm.rs` 的 `Sec-MS-GEC` 令牌生成（v2 自定义哈希）、`edge/voices.rs` 音色表、`edge/ssml.rs` SSML 构造、`edge/util.rs` 时间与编码工具
     - `config.rs` 配置读写与全局互斥、`config/types.rs` 结构体与默认值、`config/crypto.rs` DPAPI 加解密
     - `gift.rs` 礼物列表：金额门槛与连击合并（唯一判定处，前端只负责按 id 覆盖与条数上限）
     - `update.rs` 版本更新提醒：请求 GitHub Releases 比对版本（只提醒，不下载安装）、ShellExecuteW 打开下载页
@@ -99,7 +99,8 @@
 - 朗读与显示是**两套独立的 `DanmakuFilter`**（`danmaku_filter` / `tts.filter`）：显示筛选在前端 Overlay 做，朗读筛选在 Rust `tts::on_danmaku` 做，改任一侧别把两者耦合成一份配置
 - `src/styles/settings.css` 是**全局样式**（无 scoped），类名是主窗口所有页面的共用契约：往里加规则前先确认不和已有页面的类名撞车（`StatusDashboard` 的 `.tip` 就因此改名 `.dashboard-tip`）；页面独有的差异项（如 `.select` 的 min-width）留在各自组件的 scoped 样式里覆盖
 - `DisplayDanmaku`（弹幕事件 + `isRoomMedal` 派生标记）定义在 `types/ipc.ts`，Overlay 列表与 `DanmakuRow` 共用
-- Edge TTS 协议集中在 `tts/edge.rs`（音色表在 `edge/voices.rs`、SSML 在 `edge/ssml.rs`）：改协议用 `scripts/edge-tts-probe.ps1` 验证（`-DumpHeader` 看帧头、`-OutputFormat` 换格式），联网单测是 `cargo test --lib -- --ignored edge_synthesizes_mp3_live` / `voice_list_fetches_live`
+- Edge TTS 协议集中在 `tts/edge.rs`（音色表在 `edge/voices.rs`、SSML 在 `edge/ssml.rs`、DRM 令牌在 `edge/drm.rs`）：改协议用 `scripts/edge-tts-probe.ps1` 验证（`-DumpHeader` 看帧头、`-OutputFormat` 换格式），联网单测是 `cargo test --lib -- --ignored edge_synthesizes_mp3_live` / `voice_list_fetches_live`
+- `Sec-MS-GEC` 令牌是 **v2**（`tts/edge/drm.rs`，`Sec-MS-GEC-Version: 2-…`）：微软 2026-10 起强制，v1（纯 SHA256 + `1-` 前缀）在部分地区已握手上报 403（`Invalid response status`），现象是本地能朗读、别人不能。v2 = `<16 hex CS64>-<64 hex SHA256>`，两套哈希的常数都被刻意改过，**不能**换成 `sha2` 标准实现；唯一可信的回归判据是官方向量单测 `cargo test --lib drm`（`v2_token_matches_captured_vector`）。另外 ticks 必须走浮点路径，别「优化」成整数运算——官方实测某些时间戳会因此错开、令牌失配。握手 403 时 `connect` 会按响应头 `Date` 校准本机时钟偏差（`drm.rs` 的 `CLOCK_SKEW_MS`，官方同款）再重试一次：偏差超过 5 分钟窗口时令牌怎么算都错，表现同样是「朗读全挂、弹幕正常」，本机时钟不准的用户靠这条自愈（联网回归测试 `edge_recovers_from_clock_skew_live`）
 - `tts/text.rs` 的 `NAMED_CHARS`（`_`→下划线、`ω`→欧米伽等噪声字符表）是逐字实测得出的，加字符前先用探测脚本实测 Δ 字节数；实测数据在 `Task/findings.md`（该目录被 gitignore，仅本机可见）
 - TTS 播放走 winmm MCI + 固定临时文件 `%TEMP%\bili-danmu-tts.mp3`，依赖队列串行（同一时刻只有一个 MCI 句柄）；`max_len` 只约束弹幕正文，不含身份前缀与用户名
 - TTS 停播有两条互不相同的路径，别合并：①`epoch` 递增 = 作废**还没开播**的在途音频（积压时打断；正在念的那条念完，否则开了念用户名时只能听到半句名字）；②`worker.rs` 里 `player::play_mp3` 的 `stop_now` 闭包 = 每 100ms 查总开关，关掉朗读时立刻停。`force = true`（试听 / 礼物朗读）**两道拦截都免疫**：一旦入队就一定念完（礼物正在合成时弹幕到达不会把它作废）。不要改回「从其他线程直接调 MCI stop」：它会与 open/play 交错，且阻塞弹幕回调
