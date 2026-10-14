@@ -23,6 +23,19 @@ let pollTimer: ReturnType<typeof setInterval> | undefined
 
 const canSend = computed(() => loggedIn.value && connected.value)
 
+// 未登录 / 未连接时输入框是禁用的（发弹幕要登录态 + 房间会话），
+// 但禁用态原本没有任何文案，只有「点不动、打不了字」，很容易被当成输入框坏了，故补上原因
+const inputPlaceholder = computed(() => {
+  if (!loggedIn.value) return '登录后可发送弹幕'
+  if (!connected.value) return '连接直播间后可输入'
+  return '输入弹幕，回车发送'
+})
+const disabledHint = computed(() => {
+  if (!loggedIn.value) return '未登录：请先在主界面登录 B 站账号'
+  if (!connected.value) return '未连接直播间：请先在主界面点「连接」'
+  return ''
+})
+
 async function sendDanmaku() {
   const text = danmakuText.value.trim()
   if (!text || sending.value || !canSend.value) return
@@ -97,12 +110,13 @@ onUnmounted(() => {
 
 <template>
   <div class="sender-root" :style="{ fontSize: fontSize + 'px' }" @contextmenu.prevent>
-    <div class="input-row">
+    <!-- 悬停提示挂在行容器上：disabled 的表单元素在 Chromium 里不派发鼠标事件，挂在 input 自己身上不出提示 -->
+    <div class="input-row" :title="disabledHint || undefined">
       <input
         v-model="danmakuText"
         class="send-input"
         type="text"
-        placeholder="输入弹幕，回车发送"
+        :placeholder="inputPlaceholder"
         maxlength="100"
         :disabled="!canSend"
         @keyup.enter="sendDanmaku" />
@@ -159,6 +173,18 @@ onUnmounted(() => {
 .send-input:focus {
   border-color: rgba(120, 180, 255, 0.95);
   border-radius: 0.4em;
+}
+
+/* 未登录 / 未连接时的禁用态：底色与描边一起变淡，明确「现在不能输入」而不是坏了
+   （原样式显式写了 color / background / border，不加这条时禁用态与可用态几乎一样） */
+.send-input:disabled {
+  color: rgba(255, 255, 255, 0.4);
+  border-color: rgba(255, 255, 255, 0.15);
+  cursor: not-allowed;
+}
+
+.send-input:disabled::placeholder {
+  color: rgba(255, 255, 255, 0.32);
 }
 
 /* 穿透开关：发送框是独立窗口，穿透开启后本按钮仍可点击，是「关掉穿透」的唯一入口 */
