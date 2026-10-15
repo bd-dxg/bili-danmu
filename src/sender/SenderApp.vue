@@ -96,7 +96,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="sender-root" :style="{ fontSize: fontSize + 'px' }" @contextmenu.prevent>
+  <div class="sender-root" :style="{ fontSize: fontSize + 'px' }">
     <div class="input-row">
       <input
         v-model="danmakuText"

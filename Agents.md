@@ -76,7 +76,7 @@
     - `components/` 复用组件（`LoginDialog.vue` 登录二维码弹窗、`DanmakuFilterPanel.vue` 弹幕筛选表单（显示/朗读共用）、`StatusDashboard.vue` 运行状态仪表盘、`SettingRow.vue` 设置行、`OverlayWindowPanel.vue` 弹幕窗标签页）
     - `composables/` 逻辑（`useLogin` 登录态、`useRoomConnection` 连接与最近房间、`useTtsConfig` 朗读配置与音色列表与校验、`useSaveTip` 设置页提示、`useUpdate` 更新检查结果）
     - `overlay/OverlayApp.vue` + `overlay/DanmakuRow.vue` 悬浮层入口与单行渲染、`overlay/GiftRow.vue` 礼物行、`overlay/MetaBadges.vue` 两区共用的身份徽章列、`overlay/row-style.ts` 共用的描边计算、`sender/SenderApp.vue` 发送弹幕框入口
-    - `styles/settings.css` 全局设置页样式（约束见「注意事项」）、`types/ipc.ts` IPC 类型定义、`overlay.ts` / `sender.ts` 独立入口（对应 `overlay.html` / `sender.html`）
+    - `styles/settings.css` 全局设置页样式（约束见「注意事项」）、`types/ipc.ts` IPC 类型定义、`overlay.ts` / `sender.ts` 独立入口（对应 `overlay.html` / `sender.html`）、`context-menu.ts` 两个悬浮窗入口共用的右键菜单屏蔽
   - `src-tauri/src/` Rust 核心：
     - `lib.rs` 组装（状态托管、窗口创建、托盘、命令注册）、`state.rs` 内存状态、`commands.rs` IPC 命令、`connection.rs` 连接与断线重连、`window.rs` 窗口辅助与发送框吸附
     - `bilibili/`：`protocol.rs` 协议包、`parser.rs` 解压/解析、`api.rs` HTTP 接口（房间解析、弹幕配置、主播名）、`ws.rs` WebSocket 会话、`wbi.rs` 签名、`login.rs` 扫码登录、`send.rs` 发送弹幕、`live.rs` 关注在播（关注列表 + 批量开播状态）、`event.rs` 事件
@@ -107,7 +107,7 @@
 - 登录 Cookie 在 `config.rs` 的 `save_config_unlocked`（唯一写盘边界）统一 **DPAPI 加密**（`dpapi:` 前缀 + hex）落盘，加解密在 `config/crypto.rs`，读取自动解密（旧版明文无前缀兼容）：任何新增的敏感字段必须走同类加密，勿明文落盘；内存态保持明文
 - `config.rs` 读写持有全局互斥（save_* 均为 load-modify-save）：新增保存函数须沿用 `lock_cfg()` + `*_unlocked` 模式，勿在持锁时调用加锁公共入口（std Mutex 不可重入）
 - 断线自动重连在 `connection.rs` `spawn_connection`（1/2/4/…/30s 退避、10 次上限）；改连接收尾逻辑时保留取消令牌身份检查（`finish_connection`），否则旧任务会误清新连接状态
-- 发送弹幕需登录态（`bili_jct` 做 CSRF 签名，游客无 bili_jct 会报错）；发送框窗口始终吸附 Overlay 下方（`window.rs` `sync_sender_docked`），**左端与面板背景左边缘同一条线**（6px padding + `--panel-inset` 5.15em，不再对齐正文列）、**宽度取面板宽度的 50%（上限 260px）**、高度随弹幕字号缩放；右端带「穿透」开关按钮（发送框是独立窗口，穿透开启后仍可点，是关掉穿透的唯一入口）——改 Overlay 布局（容器 padding、`--role-indent` / `--panel-inset`）时须同步 `sender_layout_metrics` 里的这几个系数。弹幕窗与发送框均用 `@contextmenu.prevent` 屏蔽右键菜单
+- 发送弹幕需登录态（`bili_jct` 做 CSRF 签名，游客无 bili_jct 会报错）；发送框窗口始终吸附 Overlay 下方（`window.rs` `sync_sender_docked`），**左端与面板背景左边缘同一条线**（6px padding + `--panel-inset` 5.15em，不再对齐正文列）、**宽度取面板宽度的 50%（上限 260px）**、高度随弹幕字号缩放；右端带「穿透」开关按钮（发送框是独立窗口，穿透开启后仍可点，是关掉穿透的唯一入口）——改 Overlay 布局（容器 padding、`--role-indent` / `--panel-inset`）时须同步 `sender_layout_metrics` 里的这几个系数。弹幕窗与发送框的右键菜单在**入口脚本**里挂 `document` 级 `contextmenu` 拦截屏蔽（`src/context-menu.ts` 的 `disableDefaultContextMenu()`，两个入口各调一次），**不要退回 `@contextmenu.prevent`**：按住右键拖动、指针离开窗口后再松开时 `contextmenu` 事件的 target 会落到 `<html>`，挂在组件根节点上的修饰符收不到，WebView2 就会弹出宿主默认菜单（issue #37）
 - 朗读与显示是**两套独立的 `DanmakuFilter`**（`danmaku_filter` / `tts.filter`）：显示筛选在前端 Overlay 做，朗读筛选在 Rust `tts::on_danmaku` 做，改任一侧别把两者耦合成一份配置
 - `src/styles/settings.css` 是**全局样式**（无 scoped），类名是主窗口所有页面的共用契约：往里加规则前先确认不和已有页面的类名撞车（`StatusDashboard` 的 `.tip` 就因此改名 `.dashboard-tip`）；页面独有的差异项（如 `.select` 的 min-width）留在各自组件的 scoped 样式里覆盖
 - `DisplayDanmaku`（弹幕事件 + `isRoomMedal` 派生标记）定义在 `types/ipc.ts`，Overlay 列表与 `DanmakuRow` 共用
