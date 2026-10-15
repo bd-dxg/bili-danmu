@@ -275,6 +275,7 @@ pub fn run() {
             commands::tts_list_voices,
             commands::tts_refresh_voices,
             commands::get_recent_rooms,
+        commands::list_following_live,
             commands::overlay_get_size,
             commands::overlay_set_size,
             update::check_update,

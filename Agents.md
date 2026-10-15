@@ -37,6 +37,18 @@
 - 朗读（`tts::on_welcome` + `tts/text.rs::build_welcome_text`）：只念舰长进场，文案「欢迎舰长 老板A进入直播间」。**档位要念**（不念的话听起来就是「欢迎某某进入直播间」，分不出总督和舰长），档位与用户名之间留一个空格——与弹幕朗读的身份前缀同一种分隔做法。排到**队尾**（不像礼物那样插队、不抢弹幕额度），但 `force = true`：有自己的开关，不被「弹幕朗读」总开关静音
 - 设置项在「主播分区 → 欢迎信息」标签，显示与朗读**均默认关**：这类事件量级比弹幕大，且在热度房限速后信息量很低，由主播按房间情况自己开
 
+## 关注在播（主界面手动刷新）
+
+「直播间」页在「最近」位置多一行「关注在播」+ 刷新按钮（「最近房间」面包屑已暂时隐藏，代码保留）：列出已关注且正在开播的主播名，点击直连。
+
+- 触发时机：`loggedIn` 变 true 自动查一次（打开软件已是登录态 / 扫码登录成功后各走一次，同一个 `watch`），之后手动点「刷新」；登出时清空列表
+
+- 数据源 `bilibili/live.rs` → `commands::list_following_live`：① `x/relation/followings` 拉关注（uid + 昵称，最多 10 页 / 500 人）；② `room/v1/Room/get_status_info_by_uids` 每批 100 个 uid 查开播状态，只取 `live_status == 1`
+- 实测：关注列表带现有登录 Cookie 即可，**无需 WBI 签名、无需 buvid3**（Referer 用 live / space 都通）；批量状态接口匿名可调，且**没有直播间的 uid 直接不返回 key**（不是报错），按缺失跳过
+- 未登录时关注列表返回 `code:-101`：命令层直接报错「请先扫码登录」，退出登录时前端清空列表
+- 没有面向关注列表的开播推送长连接，只能轮询批量接口；当前不做后台轮询（手动刷新 + 登录后自动一次）
+- 「最近连接直播间」面包屑暂时隐藏：只隐藏 UI（`RoomView.vue` 的 `SHOW_RECENT_ROOMS = false`），数据、代码、持久化全部保留
+
 ## 技术栈
 
 - 前端：Vue 3（`<script setup>`）+ Vite + TypeScript，包管理 pnpm
@@ -67,7 +79,7 @@
     - `styles/settings.css` 全局设置页样式（约束见「注意事项」）、`types/ipc.ts` IPC 类型定义、`overlay.ts` / `sender.ts` 独立入口（对应 `overlay.html` / `sender.html`）
   - `src-tauri/src/` Rust 核心：
     - `lib.rs` 组装（状态托管、窗口创建、托盘、命令注册）、`state.rs` 内存状态、`commands.rs` IPC 命令、`connection.rs` 连接与断线重连、`window.rs` 窗口辅助与发送框吸附
-    - `bilibili/`：`protocol.rs` 协议包、`parser.rs` 解压/解析、`api.rs` HTTP 接口（房间解析、弹幕配置、主播名）、`ws.rs` WebSocket 会话、`wbi.rs` 签名、`login.rs` 扫码登录、`send.rs` 发送弹幕、`event.rs` 事件
+    - `bilibili/`：`protocol.rs` 协议包、`parser.rs` 解压/解析、`api.rs` HTTP 接口（房间解析、弹幕配置、主播名）、`ws.rs` WebSocket 会话、`wbi.rs` 签名、`login.rs` 扫码登录、`send.rs` 发送弹幕、`live.rs` 关注在播（关注列表 + 批量开播状态）、`event.rs` 事件
     - `tts/`：`mod.rs` 队列状态与入口钩子（`on_danmaku` / `on_backing`）、`text.rs` 筛选/清洗/组装文案（弹幕与打赏各一个组装函数）、`gift.rs` 礼物朗读的连击聚合与静默窗口、`worker.rs` 合成与播放流水线、`player.rs` winmm MCI 播放、`edge.rs` Edge TTS 协议、`edge/drm.rs` 的 `Sec-MS-GEC` 令牌生成（v2 自定义哈希）、`edge/voices.rs` 音色表、`edge/ssml.rs` SSML 构造、`edge/util.rs` 时间与编码工具
     - `config.rs` 配置读写与全局互斥、`config/types.rs` 结构体与默认值、`config/crypto.rs` DPAPI 加解密
     - `gift.rs` 礼物列表：金额门槛与连击合并（唯一判定处，前端只负责按 id 覆盖与条数上限）

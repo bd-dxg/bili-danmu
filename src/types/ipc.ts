@@ -180,6 +180,16 @@ export interface RecentRoom {
   uname?: string | null
 }
 
+/** 已关注且正在开播的主播（主界面「关注在播」手动刷新） */
+export interface FollowingLive {
+  /** 主播 uid */
+  uid: number
+  /** 主播昵称（取自关注列表） */
+  uname: string
+  /** 真实房间号（点击可直连） */
+  room_id: number
+}
+
 /** 弹幕过滤配置（Rust ↔ Vue，事件名 danmaku-filter） */
 export interface DanmakuFilter {
   /** 只显示舰长（全部大航海）/ 房管弹幕 */
