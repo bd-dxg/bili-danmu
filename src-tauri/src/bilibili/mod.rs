@@ -2,6 +2,7 @@
 
 pub mod api;
 pub mod event;
+pub mod live;
 pub mod login;
 pub mod parser;
 pub mod protobuf;

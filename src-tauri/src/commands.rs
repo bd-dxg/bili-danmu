@@ -318,6 +318,37 @@ pub(crate) async fn send_danmaku(state: State<'_, AppState>, msg: String) -> Res
     bilibili::send::send_danmaku(&client, &cookies, room_id, msg).await
 }
 
+/// 查询「已关注且正在开播」的主播（主界面手动刷新；只需登录态，与当前是否已连接房间无关）
+#[tauri::command]
+pub(crate) async fn list_following_live(
+    state: State<'_, AppState>,
+) -> Result<Vec<bilibili::live::FollowingLive>, String> {
+    // 关注列表接口未登录返回 -101；锁作用域内克隆，避免持锁 await
+    let (cookies, uid) = {
+        let auth = state.auth.lock().unwrap();
+        match auth.as_ref() {
+            Some(a) => (a.cookies.clone(), a.uid),
+            None => return Err("请先扫码登录后查看关注在播".into()),
+        }
+    };
+
+    let client = bilibili::api::http_client();
+    let followings = bilibili::live::fetch_followings(&client, &cookies, uid).await?;
+    let uids: Vec<i64> = followings.iter().map(|(u, _)| *u).collect();
+    let live = bilibili::live::fetch_live_rooms(&client, &uids).await?;
+    // 昵称取自关注列表（批量状态接口也带 uname，但没必要再解析一份）
+    Ok(followings
+        .into_iter()
+        .filter_map(|(u, uname)| {
+            live.get(&u).map(|&room_id| bilibili::live::FollowingLive {
+                uid: u,
+                uname,
+                room_id,
+            })
+        })
+        .collect())
+}
+
 /// 查询最近连接的直播间（主界面面包屑，已按最近在前排序）
 #[tauri::command]
 pub(crate) fn get_recent_rooms(app: AppHandle) -> Vec<config::RecentRoom> {
