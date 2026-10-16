@@ -8,7 +8,7 @@
 
 打赏（礼物 / SC / 上舰）的**弹幕窗渲染**与**朗读**都已上线：解析 → 金额门槛 + 连击合并（`src-tauri/src/gift.rs`）→ 弹幕窗内独立礼物区（弹幕列表上方）；朗读侧另算一遍门槛与连击（`src-tauri/src/tts/gift.rs`）→ 插队送进 Edge TTS 队列。
 
-- 解析：`parser.rs` 把 `SEND_GIFT` / `COMBO_SEND` / `SUPER_CHAT_MESSAGE` / `GUARD_BUY` 解成 `BilibiliEvent::Backing`；金额统一折算成整数「分」（`amount_fen`，金瓜子 1000 = 1 元），免费礼物（银瓜子 / 零价）直接返回 None
+- 解析：`parser/gift.rs` 把 `SEND_GIFT` / `COMBO_SEND` / `SUPER_CHAT_MESSAGE` / `GUARD_BUY` 解成 `BilibiliEvent::Backing`；金额统一折算成整数「分」（`amount_fen`，金瓜子 1000 = 1 元），免费礼物（银瓜子 / 零价）直接返回 None
 - `COMBO_SEND` **只当连击仍在继续的信号**（延长合并窗口），数量与金额一律以 `SEND_GIFT` 为准——两路事件同时下发，两边都计就重复；它是否带价格字段未实测（用 `scripts/ws-probe.ps1` 验证）
 - 门槛与连击合并都在 Rust（`gift::on_backing`）：门槛按**累加后的总额**判定，未过门槛的连击先攒在分组里；同人同礼物在 `combo_window_secs` 内合并成一行，行 id = 分组键 + 首次时间戳，前端按 id **覆盖**更新（位置不变）
 - 渲染：`GiftRow.vue` + `MetaBadges.vue`。徽章列抽成 `MetaBadges` 是**故意共用**的——`role-slot` 宽度与 `--role-indent` / 发送框左缩进（`window.rs` `sender_layout_metrics`）同源，复制一份 CSS 后改单侧就会错位；`row-style.ts` 同理（两行共用描边计算）。**礼物行不显示粉丝牌**：粉丝牌由弹幕行组装成 `medal` 对象传入，礼物行不传就不渲染（打赏行已有用户名与礼物名）；打赏事件（`Backing`）因此不再下发 `medal_*` 字段，前端也不再有 `DisplayBacking`，礼物行直接用 `BackingEvent`
@@ -24,7 +24,7 @@
 
 五个 cmd 解成 `BilibiliEvent::Welcome` → `welcome.rs` 去重限速 → 两个独立消费者（渲染 / 朗读）。
 
-- 解析（`parser.rs`，字段号全部实测得出，见 `Task/findings.md`）：
+- 解析（`parser/welcome.rs`，字段号全部实测得出，见 `Task/findings.md`）：
   - `INTERACT_WORD_V2` —— **不是 JSON 是 base64 protobuf**（`1`=uid、`2`=用户名、`5`=msg_type、`7`=时间戳秒），msg_type `1/2/3` → 进房 / 关注 / 分享，其余取值不猜语义直接丢。`INTERACT_WORD`（V1）已不存在
   - `LIKE_INFO_V3_CLICK` —— 单次点赞，纯 JSON，`uinfo.guard.level` 直接可读
   - `LIKE_INFO_V3_UPDATE` —— 只有累计点赞总数（`click_count`），**不是事件**，故意不解析
@@ -51,19 +51,19 @@
 
 ## 表情包（渲染 + 朗读均已上线）
 
-弹幕里的表情包看 `DANMU_MSG.info[0][13]`：有表情时是对象（`emoticon_unique` / `url` / `width` / `height` / `bulge_display`），无表情时是**字符串 `"{}"`**。解析在 `parser.rs::parse_emote` → `event::Emote`，随弹幕事件下发（渲染与朗读同一个字段）。
+弹幕里的表情包看 `DANMU_MSG.info[0][13]`：有表情时是对象（`emoticon_unique` / `url` / `width` / `height` / `bulge_display`），无表情时是**字符串 `"{}"`**。解析在 `emote.rs::parse_emote` → `event::Emote`，随弹幕事件下发（渲染与朗读同一个字段）。
 
 - **判断依据不是「有没有中括号」**：`[委屈]` 这类只是全站小表情；`room_*`（UP主大表情 / 房间专属）、`official_*`（通用表情，你举的「冲鸭」`official_332`、「upup」`official_348`）、`upower_[包名_表情名]`（收藏集装扮）在正文里是**纯词、没有中括号** —— 它们全靠 `info[0][13].emoticon_unique` 非空来认（实测 147 条样本 0 例外，且表情弹幕的正文全部等于表情名）
 - 渲染在 `overlay/DanmakuRow.vue`：表情弹幕的正文**补上中括号**显示（「冲鸭」→「[冲鸭]」）—— 不拉外部图（桌面壳里图片很容易瘸：CSP 默认不只是 `'self' data:`，表情图地址又有 `http://` 与协议相对 `//` 两种形态，一失败就是破图/裸文字，不如文字好认）
-- 报文里的 `url` / `width` / `height` / `bulge` 照实解析并下发（`parser.rs::normalize_url` 把地址统一升到 `https://`），但**不用于渲染**：保留是协议建模 + 日志诊断用（日志会打 unique 与尺寸）
+- 报文里的 `url` / `width` / `height` / `bulge` 照实解析并下发（`emote.rs::normalize_url` 把地址统一升到 `https://`），但**不用于渲染**：保留是协议建模 + 日志诊断用（日志会打 unique 与尺寸）
 - 朗读（`tts/text.rs::build_text`）：带表情字段的**整条不念**；无字段的老式小表情**剥掉 `[名字]` 只念文字**（「今天真好[花]」→ 念「今天真好」，整条都是表情则不念）；开关在「朗读 → 朗读筛选 → 朗读表情弹幕」（`TtsConfig::read_emote`，开启后两类都照常念）
 - `info[0][13]` 无表情时是字符串 `"{}"` 而不是空对象：`as_object()` 直接 None，**别当对象硬解**；图片地址必须在 Rust 侧升到 `https://`（老式小表情给协议相对 `//i0.hdslb.com/…`，通用表情「冲鸭」给的是 `http://…`）
-- 判据（`parser.rs::parse_emote`）：`info[0][13]` 能当对象解且 `emoticon_unique` 非空 → 表情，**图片地址可有可无**（早期版本要求地址非空，把没地址的表情漏成普通文字、还被朗读）
+- 判据（`emote.rs::parse_emote`）：`info[0][13]` 能当对象解且 `emoticon_unique` 非空 → 表情，**图片地址可有可无**（早期版本要求地址非空，把没地址的表情漏成普通文字、还被朗读）
 - `info[0][13]` 无表情时是字符串 `"{}"` 而不是空对象：`as_object()` 直接 None，**别当对象硬解**；图片地址仍会归一化到 `https://`（老式小表情给协议相对 `//i0.hdslb.com/…`，通用表情「冲鸭」给的是 `http://…`）
 - 待验证：**文字 + 表情混合**弹幕（本次 147 条里没有）。若 B 站允许，`info[0][13]` 也只带一个表情对象，当前实现会整行换图 / 整条不念，会丢掉其中的文字。旁证字段：`info[0][12]`（0/1 标记）、`info[0][15].extra`（冗余副本，含 `dm_type=1`）
 - 排障：逐条弹幕 / 表情日志是 **debug 级**（`lib.rs` 里 level 默认 Info，平时不落盘、不刷屏，避免高频房把 5MB 轮转刷满、冲掉故障日志）—— 需要时把那一行临时改成 `Debug` 再复现一次；日志目录 `%LOCALAPPDATA%\com.bilidanmu.app\logs\bili-danmu.log`（关于页可一键打开）
 - 实测脚本：`Task/probe-emote.ps1`（表情清单）、`Task/probe-emote-map.ps1`（unique→名字 逐条校验）、`Task/analyze-dump.ps1`。**注意抓包抽样不可靠**（180 秒只有几十条 DANMU_MSG，容易漏掉低频形态），房间弹幕历史接口 `xlive/web-room/v1/dM/gethistory` 能直接看到自己发出去的原文，排「发出去的到底是什么」很快
-- **两类表情都要认**：① 报文带字段的（`d.emote`：`room_` / `official_` / `upower_`）；② **无字段的按正文里的 `[名字]` 片段认**（`parser.rs::strip_bracket_emotes`，重剥离不重整体匹配）。三个实测形态：连点表情拼成一条（`[比心][比心][比心]`）、文字 + 表情混在同一条（`今天真好[花]` → 只念「今天真好」）、纯表情（`[花]` → 不念）。畸形中括号（未闭合 / 内部还有 `[` / 名字为空或 > 30 字）一律不剥
+- **两类表情都要认**：① 报文带字段的（`d.emote`：`room_` / `official_` / `upower_`）；② **无字段的按正文里的 `[名字]` 片段认**（`emote.rs::strip_bracket_emotes`，重剥离不重整体匹配）。三个实测形态：连点表情拼成一条（`[比心][比心][比心]`）、文字 + 表情混在同一条（`今天真好[花]` → 只念「今天真好」）、纯表情（`[花]` → 不念）。畸形中括号（未闭合 / 内部还有 `[` / 名字为空或 > 30 字）一律不剥
 - 代价（已知且接受）：手打方括号文字（「价格[10]元」）也会被当表情剥掉
 
 ## 技术栈
@@ -96,8 +96,8 @@
     - `styles/settings.css` 全局设置页样式（约束见「注意事项」）、`types/ipc.ts` IPC 类型定义、`overlay.ts` / `sender.ts` 独立入口（对应 `overlay.html` / `sender.html`）
   - `src-tauri/src/` Rust 核心：
     - `lib.rs` 组装（状态托管、窗口创建、托盘、命令注册）、`state.rs` 内存状态、`commands.rs` IPC 命令、`connection.rs` 连接与断线重连、`window.rs` 窗口辅助与发送框吸附
-    - `bilibili/`：`protocol.rs` 协议包、`parser.rs` 解压/解析（DANMU_MSG 等命令的 JSON 解析）、`emote.rs` 表情包（报文表情字段解析 + 正文 `[名字]` 剥离）、`api.rs` HTTP 接口（房间解析、弹幕配置、主播名）、`ws.rs` WebSocket 会话、`wbi.rs` 签名、`login.rs` 扫码登录、`send.rs` 发送弹幕、`live.rs` 关注在播（关注列表 + 批量开播状态）、`event.rs` 事件
-    - `tts/`：`mod.rs` 队列状态与入口钩子（`on_danmaku` / `on_backing`）、`text.rs` 筛选/清洗/组装文案（弹幕与打赏各一个组装函数）、`gift.rs` 礼物朗读的连击聚合与静默窗口、`worker.rs` 合成与播放流水线、`player.rs` winmm MCI 播放、`edge.rs` Edge TTS 协议、`edge/drm.rs` 的 `Sec-MS-GEC` 令牌生成（v2 自定义哈希）、`edge/voices.rs` 音色表、`edge/ssml.rs` SSML 构造、`edge/util.rs` 时间与编码工具
+    - `bilibili/`：`protocol.rs` 协议包、`parser.rs` 解压/展开 + 命令分发 + 共用小工具（命令解析按域拆在 `parser/`：`danmaku.rs` 弹幕 / `gift.rs` 打赏 / `welcome.rs` 欢迎）、`emote.rs` 表情包（报文表情字段解析 + 正文 `[名字]` 剥离）、`api.rs` HTTP 接口（房间解析、弹幕配置、主播名）、`ws.rs` WebSocket 会话、`wbi.rs` 签名、`login.rs` 扫码登录、`send.rs` 发送弹幕、`live.rs` 关注在播（关注列表 + 批量开播状态）、`event.rs` 事件
+    - `tts/`：`mod.rs` 队列状态与入口钩子（`on_danmaku` / `on_backing`）、`clean.rs` 朗读前清洗（噪声字符 / 重复折叠 / 链接）、`text.rs` 筛选与组装文案（弹幕与打赏各一个组装函数）、`gift.rs` 礼物朗读的连击聚合与静默窗口、`worker.rs` 合成与播放流水线、`player.rs` winmm MCI 播放、`edge.rs` Edge TTS 协议、`edge/drm.rs` 的 `Sec-MS-GEC` 令牌生成（v2 自定义哈希）、`edge/voices.rs` 音色表、`edge/ssml.rs` SSML 构造、`edge/util.rs` 时间与编码工具
     - `config.rs` 配置读写与全局互斥、`config/types.rs` 结构体与默认值、`config/crypto.rs` DPAPI 加解密
     - `gift.rs` 礼物列表：金额门槛与连击合并（唯一判定处，前端只负责按 id 覆盖与条数上限）
     - `update.rs` 版本更新提醒：请求 GitHub Releases 比对版本（只提醒，不下载安装）、ShellExecuteW 打开下载页
