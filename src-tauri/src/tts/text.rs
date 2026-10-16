@@ -3,6 +3,7 @@
 //! 全文只有纯字符串处理，不碰队列与网络，便于单测覆盖边界。
 //! 筛选语义与前端 Overlay 的显示筛选一致（见 `matches_filter` 注释）。
 
+use crate::bilibili::emote::strip_bracket_emotes;
 use crate::bilibili::event::{Backing, BackingKind, Danmaku, Welcome};
 use crate::config::{DanmakuFilter, TtsConfig};
 
@@ -33,13 +34,28 @@ pub(super) fn matches_filter(d: &Danmaku, f: &DanmakuFilter) -> bool {
         || (f.enable_wealth && d.wealth_level.unwrap_or(0) >= f.wealth_min)
 }
 
+/// 是否含表情弹幕：报文带表情字段，或正文里有 `[名字]` 片段（老式小表情不给字段）
+pub(super) fn is_emote(d: &Danmaku) -> bool {
+    d.emote.is_some() || strip_bracket_emotes(&d.content).1
+}
+
 /// 组装朗读文案：可选身份前缀 + 可选用户名 + 清洗后的正文
 ///
 /// 正文没有可读内容（纯 emoji / 纯标点 / 纯链接）时整条返回空，
 /// 不能只剩下「舰长 小明说」这种没内容的空壳。
 /// `max_len` 只约束正文：前缀与用户名是固定少量字，不该挤掉弹幕本身。
 pub(super) fn build_text(d: &Danmaku, config: &TtsConfig) -> String {
-    let mut content = clean_for_speech(&d.content);
+    // 表情部分默认不念：
+    // - 报文带表情字段的（room_/official_/upower_）：正文就是表情名（「生气」「冲鸭」）→ 整条不念
+    // - 不带字段的老式小表情（「[花]」）：正文可能混着文字（实测「今天真好[花]」）→ 剥掉 `[名字]`
+    //   片段、只念剩下的文字；剥完什么都不剩时，下面的 has_readable_content 会把整条跳过
+    // 打开「朗读筛选 → 朗读表情弹幕」后，两类都按普通弹幕照念。
+    let content_src: String = match (config.read_emote, d.emote.is_some()) {
+        (true, _) => d.content.clone(),
+        (false, true) => return String::new(),
+        (false, false) => strip_bracket_emotes(&d.content).0,
+    };
+    let mut content = clean_for_speech(&content_src);
     if !has_readable_content(&content) {
         return String::new();
     }
@@ -237,7 +253,7 @@ fn is_link(token: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bilibili::event::WelcomeKind;
+    use crate::bilibili::event::{Emote, WelcomeKind};
 
     fn danmaku(content: &str) -> Danmaku {
         Danmaku {
@@ -253,6 +269,7 @@ mod tests {
             guard_level: None,
             wealth_level: None,
             is_admin: false,
+            emote: None,
         }
     }
 
@@ -329,6 +346,98 @@ mod tests {
             ..TtsConfig::default()
         };
         assert_eq!(build_text(&d, &with_user), "小明说 谢谢礼物");
+    }
+
+    #[test]
+    fn 表情弹幕整条不念() {
+        // 正文是表情名（「冲鸭」），念出来没意义；连用户名也不念
+        let config = TtsConfig {
+            read_username: true,
+            read_role: true,
+            ..TtsConfig::default()
+        };
+        let mut d = danmaku("冲鸭");
+        d.guard_level = Some(3);
+        d.emote = Some(Emote {
+            unique: "official_332".into(),
+            url: "https://i0.hdslb.com/bfs/emote/x.png".into(),
+            width: 20,
+            height: 20,
+            bulge: false,
+        });
+        assert_eq!(build_text(&d, &config), "", "表情弹幕应整条跳过");
+    }
+
+    #[test]
+    fn 开启开关后表情弹幕照常念() {
+        // 开关打开就走普通弹幕的路：正文（即表情名）照念
+        let config = TtsConfig {
+            read_emote: true,
+            read_username: true,
+            ..TtsConfig::default()
+        };
+        let mut d = danmaku("冲鸭");
+        d.emote = Some(Emote {
+            unique: "official_332".into(),
+            url: "https://i0.hdslb.com/bfs/live/x.png".into(),
+            width: 200,
+            height: 60,
+            bulge: false,
+        });
+        assert_eq!(build_text(&d, &config), "小明说 冲鸭");
+    }
+
+    #[test]
+    fn 无表情字段的老式小表情默认也不念() {
+        // 实测：「[花]」这类弹幕的 info[0][13] 是空对象（服务端不给字段），只能按正文形态认
+        let config = TtsConfig {
+            read_username: true,
+            ..TtsConfig::default()
+        };
+        assert!(danmaku("[花]").emote.is_none(), "样本不带表情字段");
+        assert_eq!(build_text(&danmaku("[花]"), &config), "");
+        assert_eq!(build_text(&danmaku(" [花] "), &config), "", "首尾空白不影响判定");
+        // 弹幕框连点表情会拼成一条（实测 [比心][比心][比心]），多个也得认
+        assert_eq!(build_text(&danmaku("[比心][比心][比心]"), &config), "");
+        assert_eq!(build_text(&danmaku("[喝彩][喝彩][喝彩][喝彩]"), &config), "");
+    }
+
+    #[test]
+    fn 表情混着文字时只念文字() {
+        let config = TtsConfig::default();
+        assert_eq!(build_text(&danmaku("今天真好[花]"), &config), "今天真好");
+        assert_eq!(build_text(&danmaku("[花]今天真好"), &config), "今天真好");
+        assert_eq!(build_text(&danmaku("今天[花]真好"), &config), "今天真好");
+        assert_eq!(build_text(&danmaku("今天真好[花][比心]"), &config), "今天真好");
+        // 开关打开：连表情一起念（方括号本身引擎不出声）
+        let on = TtsConfig {
+            read_username: true,
+            read_emote: true,
+            ..TtsConfig::default()
+        };
+        assert_eq!(build_text(&danmaku("今天真好[花]"), &on), "小明说 今天真好[花]");
+    }
+
+    #[test]
+    fn 开关打开后老式小表情照常念() {
+        let config = TtsConfig {
+            read_emote: true,
+            ..TtsConfig::default()
+        };
+        // 括号不会被清洗掉（`[` `]` 不在噪声字符表里），引擎实测不念方括号，听起来就是「花」
+        assert_eq!(build_text(&danmaku("[花]"), &config), "[花]");
+        assert_eq!(build_text(&danmaku("[比心][比心]"), &config), "[比心][比心]");
+    }
+
+    #[test]
+    fn 不是表情的方括号文字照常念() {
+        let config = TtsConfig::default();
+        // 未闭合 / 内部还有括号 / 名字过长：都不算表情片段，原样念
+        for text in ["[前半", "后半]", "[a[b]c]"] {
+            assert_ne!(build_text(&danmaku(text), &config), "", "「{text}」不应被当成表情");
+        }
+        let long = format!("[{}]", "字".repeat(40));
+        assert_ne!(build_text(&danmaku(&long), &config), "", "过长的方括号文本不应被当成表情");
     }
 
     #[test]

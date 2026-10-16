@@ -13,7 +13,8 @@
   display: flex;
   gap: 2px;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 14px;
+  /* 10px 而非 14px：最高的两个标签（弹幕过滤 / 朗读筛选）要刚好不出竖向滚动条 */
+  margin-bottom: 10px;
 }
 
 .tab-btn {
@@ -22,7 +23,7 @@
   color: var(--text-dim);
   font-size: 17px;
   font-weight: bold;
-  padding: 8px 16px 10px;
+  padding: 7px 16px 9px;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
   cursor: pointer;
@@ -38,12 +39,35 @@
   font-weight: 600;
 }
 
+/* 保存 / 错误提示：固定在右下角的浮层（SaveTip.vue）
+ *
+ * 不占文档流：提示出现/消失不会把页面内容顶下去（旧写法是卡片内的 <p>，切换开关会抖动）。
+ * 右下角是因为不遮挡表单右侧的开关/输入框。
+ */
+.save-tip {
+  position: fixed;
+  right: 24px;
+  bottom: 18px;
+  z-index: 20;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+  color: var(--green);
+  font-size: 14px;
+}
+
+.save-tip-error {
+  color: var(--red);
+}
+
 /* 设置卡片与设置行 */
 .setting-card {
   background: var(--bg-side);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 4px 14px;
+  padding: 2px 14px;
 }
 
 .setting-row {
@@ -51,7 +75,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 0;
+  /* 8px 而非 12px：设置页最高的标签要刚好不出竖向滚动条 */
+  padding: 8px 0;
   border-bottom: 1px solid var(--border);
   font-size: 16px;
 }
@@ -106,8 +131,8 @@
 .tip {
   font-size: 14px;
   color: var(--text-faint);
-  padding: 4px 0 10px;
-  line-height: 1.6;
+  padding: 3px 0 8px;
+  line-height: 1.5;
 }
 
 .save-btn {

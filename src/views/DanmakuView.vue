@@ -4,6 +4,7 @@ import { onMounted, ref } from 'vue'
 
 import DanmakuFilterPanel from '../components/DanmakuFilterPanel.vue'
 import OverlayWindowPanel from '../components/OverlayWindowPanel.vue'
+import SaveTip from '../components/SaveTip.vue'
 import SettingRow from '../components/SettingRow.vue'
 import { useSaveTip } from '../composables/useSaveTip'
 import { DEFAULT_DANMAKU_FILTER, DEFAULT_OVERLAY_STYLE, type DanmakuFilter, type OverlayStyle } from '../types/ipc'
@@ -65,7 +66,7 @@ onMounted(async () => {
 
 <template>
   <div class="danmaku-page">
-    <p v-if="opError" class="error op-error">{{ opError }}</p>
+    <SaveTip :saved="savedTip" :error="opError" />
     <div class="tabs">
       <button
         v-for="t in [
@@ -129,7 +130,6 @@ onMounted(async () => {
           弹幕文字统一白色（黑色描边），任意背景下清晰。 背景不透明度作用于弹幕区与礼物区整块面板：0% = 完全透明，100% =
           纯黑。
         </p>
-        <p v-if="savedTip" class="saved">✓ 已应用并保存</p>
       </div>
     </section>
 
@@ -161,8 +161,6 @@ onMounted(async () => {
             <span class="value">{{ style.outline_width }}px</span>
           </div>
         </SettingRow>
-
-        <p v-if="savedTip" class="saved">✓ 已应用并保存</p>
       </div>
     </section>
 
@@ -172,7 +170,6 @@ onMounted(async () => {
 
     <section v-show="tab === 'filter'" class="tab-pane">
       <DanmakuFilterPanel :model-value="filter" verb="显示" @change="applyFilter" />
-      <p v-if="savedTip" class="saved">✓ 已应用并保存</p>
     </section>
   </div>
 </template>
@@ -181,10 +178,6 @@ onMounted(async () => {
 .danmaku-page {
   display: flex;
   flex-direction: column;
-}
-
-.op-error {
-  margin-bottom: 10px;
 }
 
 /* 设置卡片 / 标签栏 / 开关 / 下拉 / 提示 / 滑块 / 数值见全局 src/styles/settings.css */
@@ -209,17 +202,5 @@ onMounted(async () => {
 .color-picker::-webkit-color-swatch {
   border: none;
   border-radius: 3px;
-}
-
-.error {
-  color: var(--red);
-  font-size: 15px;
-  padding: 6px 0 0;
-}
-
-.saved {
-  color: var(--green);
-  font-size: 14px;
-  padding-bottom: 10px;
 }
 </style>

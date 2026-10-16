@@ -130,6 +130,8 @@ pub struct TtsConfig {
     pub read_username: bool,
     /// 是否在正文前念身份前缀（房管 / 舰长）
     pub read_role: bool,
+    /// 是否朗读表情弹幕（默认 false：表情弹幕整条不念——正文就是表情名，念出来没意义）
+    pub read_emote: bool,
     /// 弹幕正文最大朗读字数（不含身份前缀与用户名；超出截断，0 = 不限制）
     pub max_len: u32,
     /// 待朗读队列上限（超出丢弃最旧的）
@@ -149,6 +151,7 @@ impl Default for TtsConfig {
             volume_pct: 0,
             read_username: false,
             read_role: false,
+            read_emote: false,
             // 15 字 ≈ 3.4s 音频；B 站弹幕上限 30–40 字（≈ 7–9s），全念完在高频房间会明显积压
             max_len: 15,
             max_queue: 5,

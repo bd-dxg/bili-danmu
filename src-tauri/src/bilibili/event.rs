@@ -35,6 +35,27 @@ pub struct Danmaku {
     /// 是否房管
     #[serde(default)]
     pub is_admin: bool,
+    /// 表情包（有值时 `content` 就是表情名）；无表情时不下发，前端按普通文本渲染
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub emote: Option<Emote>,
+}
+
+/// 弹幕表情包（大表情 / 装扮表情 / 收藏集表情 / 老式小表情的统一形态）
+///
+/// 判据是 `DANMU_MSG.info[0][13]`：有表情时是对象（含 `emoticon_unique` / `url`），
+/// 无表情时是字符串 `"{}"`。正文（`content`）就是表情的显示名——实测 147 条样本里
+/// 表情弹幕的正文**等于**表情名，且「生气」「冲鸭」这类不带中括号的也一样。
+/// 各前缀的含义与实测数据见 `docs/技术说明.md` 的「表情包」。
+#[derive(Debug, Clone, Serialize)]
+pub struct Emote {
+    /// 表情唯一号：`room_<房间>_<id>`（UP主大表情）/ `official_<id>`（通用表情）/ `upower_[包名_表情名]`（收藏集装扮）
+    pub unique: String,
+    /// 表情图地址（已补全协议，可直接用作 `img src`）
+    pub url: String,
+    pub width: u32,
+    pub height: u32,
+    /// 大表情（`bulge_display=1`）：渲染得比文字大
+    pub bulge: bool,
 }
 
 /// 打赏形态

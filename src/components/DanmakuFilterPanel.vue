@@ -79,10 +79,7 @@ function emitChange() {
       </span>
       <input v-model="draft.enable_wealth" type="checkbox" class="switch" @change="emitChange()" />
     </div>
-    <p class="tip">
-      同时打开多条时，满足任意一条就显示（比如同时开「舰长 / 房管」和「有粉丝牌」，这两种人的弹幕都会显示）。 都不打开 =
-      谁的弹幕都显示。
-    </p>
+    <p class="tip">同时开多条时，满足任一条就{{ verb }}；都不开 = 谁发都{{ verb }}。</p>
   </div>
 
   <div class="setting-card words-card">
@@ -90,14 +87,11 @@ function emitChange() {
       <span class="label">屏蔽含敏感词的弹幕</span>
       <input v-model="draft.enable_sensitive" type="checkbox" class="switch" @change="emitChange()" />
     </div>
-    <p class="tip">
-      每行一个关键词（也可以用逗号隔开）。弹幕里出现其中任何一个词，整条就不{{ verb }}；
-      上面的身份筛选拦不住它——舰长、房管的发言一样会被屏蔽。
-    </p>
+    <p class="tip">每行一个关键词（也可用逗号隔开）。命中任一词就整条不{{ verb }}，舰长 / 房管也不豁免。</p>
     <textarea
       v-model="sensitiveText"
       class="words-input"
-      rows="5"
+      rows="3"
       placeholder="每行一个关键词，如：加群 / 广告, 代练"></textarea>
     <div class="words-actions">
       <button class="save-btn" @click="emitChange()">保存敏感词</button>

@@ -57,6 +57,8 @@ pub fn run() {
             }
             tauri_plugin_log::Builder::new()
                 .targets(targets)
+                // 逐条弹幕 / 表情的识别日志是 debug 级：平时不落盘（高频房不会把 5MB 轮转刷满、冲掉故障日志），
+                // 排查「表情弹幕没被识别 / 还在被念」时把这里临时改成 Debug 即可看到
                 .level(log::LevelFilter::Info)
                 .max_file_size(5 * 1024 * 1024)
                 .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(7))

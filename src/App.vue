@@ -110,6 +110,6 @@ nav {
 .content {
   flex: 1;
   overflow-y: auto;
-  padding: 20px;
+  padding: 16px;
 }
 </style>

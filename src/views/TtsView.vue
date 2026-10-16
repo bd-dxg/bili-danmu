@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 
 import DanmakuFilterPanel from '../components/DanmakuFilterPanel.vue'
+import SaveTip from '../components/SaveTip.vue'
 import SettingRow from '../components/SettingRow.vue'
 import { useSaveTip } from '../composables/useSaveTip'
 import { useTtsConfig } from '../composables/useTtsConfig'
@@ -26,9 +27,8 @@ function applyFilter(next: DanmakuFilter) {
 
 <template>
   <div class="tts-page">
-    <!-- 保存/错误提示常驻在标签栏上方，切标签也能看到 -->
-    <p v-if="opError" class="status error">{{ opError }}</p>
-    <p v-else-if="savedTip" class="status saved">✓ 已应用并保存</p>
+    <!-- 保存 / 错误提示：右下角浮层，不占文档流（出现在卡片内会把页面顶得抖动） -->
+    <SaveTip :saved="savedTip" :error="opError" />
 
     <div class="tabs">
       <button
@@ -125,6 +125,12 @@ function applyFilter(next: DanmakuFilter) {
 
     <section v-show="tab === 'filter'" class="tab-pane">
       <p class="tip">这里的规则只影响朗读，与「弹幕 → 弹幕过滤」的显示筛选各自独立。</p>
+      <div class="setting-card">
+        <SettingRow label="朗读表情弹幕">
+          <input v-model="config.read_emote" type="checkbox" class="switch" @change="save()" />
+        </SettingRow>
+        <p class="tip">默认关：表情不参与朗读（「今天真好[花]」只念「今天真好」）。打开后表情照念。</p>
+      </div>
       <DanmakuFilterPanel :model-value="config.filter" verb="朗读" @change="applyFilter" />
     </section>
   </div>
@@ -187,18 +193,5 @@ function applyFilter(next: DanmakuFilter) {
 
 .num:focus {
   border-color: var(--accent);
-}
-
-.status {
-  font-size: 14px;
-  margin-bottom: 8px;
-}
-
-.error {
-  color: var(--red);
-}
-
-.saved {
-  color: var(--green);
 }
 </style>

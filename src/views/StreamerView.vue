@@ -2,6 +2,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { onMounted, ref } from 'vue'
 
+import SaveTip from '../components/SaveTip.vue'
 import SettingRow from '../components/SettingRow.vue'
 import { useSaveTip } from '../composables/useSaveTip'
 import {
@@ -71,7 +72,7 @@ onMounted(async () => {
 
 <template>
   <div class="streamer-page">
-    <p v-if="opError" class="error op-error">{{ opError }}</p>
+    <SaveTip :saved="savedTip" :error="opError" />
     <div class="tabs">
       <button
         v-for="t in [
@@ -120,7 +121,6 @@ onMounted(async () => {
           同一观众同一种礼物在窗口内的多次送出合并成一行，数量与金额累加、位置不变。 礼物行跟随弹幕样式（字号 / 描边 /
           行间距），礼物名与金额用金色区分。
         </p>
-        <p v-if="savedTip" class="saved">✓ 已应用并保存</p>
       </div>
     </section>
 
@@ -149,7 +149,6 @@ onMounted(async () => {
           连击按「礼物渲染」标签里的连击合并窗口聚合，窗口结束后只念一次汇总； 门槛按累加后的总额判定，设 30 元时连送 30
           个 1 元礼物会攒够才念。 开关独立于弹幕朗读：关掉「朗读 → 开启弹幕朗读」后，打赏照念。
         </p>
-        <p v-if="savedTip" class="saved">✓ 已应用并保存</p>
       </div>
     </section>
 
@@ -175,7 +174,6 @@ onMounted(async () => {
           <b>后面</b>
           ，不打断正在念的内容；也不受「朗读」页里弹幕朗读开关的影响，可以单独打开。
         </p>
-        <p v-if="savedTip" class="saved">✓ 已应用并保存</p>
       </div>
     </section>
   </div>
@@ -186,10 +184,6 @@ onMounted(async () => {
 .streamer-page {
   display: flex;
   flex-direction: column;
-}
-
-.op-error {
-  margin-bottom: 10px;
 }
 
 /* 数值带「元 / 行 / 秒」后缀，比全局默认宽一点，避免拖动时挤动滑块 */
@@ -222,17 +216,5 @@ onMounted(async () => {
 .unit {
   color: var(--text-dim);
   font-size: 14px;
-}
-
-.error {
-  color: var(--red);
-  font-size: 15px;
-  padding: 6px 0 0;
-}
-
-.saved {
-  color: var(--green);
-  font-size: 14px;
-  padding-bottom: 10px;
 }
 </style>
