@@ -133,7 +133,8 @@ onUnmounted(() => {
 
 .input-row {
   display: flex;
-  align-items: center;
+  /* stretch 而非 center：两个子元素天然等高（字号/padding 一致），stretch 再上一层保险 */
+  align-items: stretch;
   gap: 0.25em;
 }
 
@@ -164,14 +165,16 @@ onUnmounted(() => {
   border-radius: 0.4em;
 }
 
-/* 穿透开关：发送框是独立窗口，穿透开启后本按钮仍可点击，是「关掉穿透」的唯一入口 */
+/* 穿透开关：发送框是独立窗口，穿透开启后本按钮仍可点击，是「关掉穿透」的唯一入口。
+   字号 / 上下 padding 与 .send-input 保持一致：em 是相对自身字号的，字号小一档
+   行高框与 padding 会跟着缩，按钮就比输入框矮（0.8em 时矮 3.5px，看着不齐）。 */
 .ct-btn {
   flex: 0 0 auto;
   appearance: none;
   -webkit-appearance: none;
   cursor: pointer;
   white-space: nowrap;
-  font-size: 0.8em;
+  font-size: 0.9em;
   font-family: inherit;
   color: rgba(255, 255, 255, 0.85);
   background: rgba(0, 0, 0, 0.55);
