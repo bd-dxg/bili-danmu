@@ -7,6 +7,7 @@
 //! 合成与播放两个任务见 `worker.rs`；音色与协议见 `edge/`；文案清洗见 `text.rs`。
 
 pub mod edge;
+mod clean;
 mod gift;
 mod player;
 mod text;
@@ -23,7 +24,8 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 use tokio::sync::Notify;
-use text::{build_backing_text, build_text, build_welcome_text, clean_for_speech, is_emote, matches_filter};
+use clean::clean_for_speech;
+use text::{build_backing_text, build_text, build_welcome_text, is_emote, matches_filter};
 
 /// 打断冷却：距上次打断不足这么久就不再作废在途音频
 /// （否则高频房间合成刚起步就被反复作废，白忙一场）
