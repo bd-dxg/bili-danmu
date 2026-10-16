@@ -37,6 +37,19 @@ const medal = computed(() =>
 const contentColor = computed(() =>
   props.d.isWelcome ? shiftHue(props.overlayStyle.username_color, WELCOME_HUE_SHIFT) : props.overlayStyle.content_color,
 )
+
+/**
+ * 正文：表情弹幕的正文就是表情名（B 站报文里一般不带中括号，如「冲鸭」），
+ * 显示时补上中括号——与老式小表情「[笑哭]」写法一致，一眼能看出是表情而不是普通文字。
+ * 收藏集 / 装扮表情的正文本身就带中括号（如 `[嘉然2.0_可爱捏]`），不能重复包裹。
+ */
+const displayContent = computed(() => {
+  const text = props.d.content
+  if (!props.d.emote) {
+    return text
+  }
+  return text.startsWith('[') && text.endsWith(']') ? text : `[${text}]`
+})
 </script>
 
 <template>
@@ -65,7 +78,7 @@ const contentColor = computed(() =>
           color: contentColor,
           fontWeight: overlayStyle.bold ? 700 : 400,
         }">
-        {{ d.content }}
+        {{ displayContent }}
       </span>
     </span>
   </div>

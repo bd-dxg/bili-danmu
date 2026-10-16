@@ -33,6 +33,24 @@ export interface DanmakuEvent {
   wealth_level?: number
   /** 是否房管 */
   is_admin: boolean
+  /** 表情包（有值时 content 即表情名，渲染成图；Rust 侧无表情不下发） */
+  emote?: DanmakuEmote
+}
+
+/**
+ * 弹幕表情包（Rust 已把图片地址补全协议）
+ *
+ * 只在 `DANMU_MSG.info[0][13]` 有表情时下发；此时 `content` 就是表情名
+ * （实测 147 条样本里正文均等于表情名，含「生气」这种不带中括号的大表情）。
+ */
+export interface DanmakuEmote {
+  /** 表情唯一号：room_<房间>_<id> / official_<id> / upower_[包名_表情名] */
+  unique: string
+  url: string
+  width: number
+  height: number
+  /** 大表情（bulge_display=1）：渲染得比文字大 */
+  bulge: boolean
 }
 
 /** Overlay 弹幕行数据：弹幕事件 + 展示所需的派生标记 */
@@ -236,6 +254,8 @@ export interface TtsConfig {
   read_username: boolean
   /** 是否在正文前念身份前缀（房管 / 舰长） */
   read_role: boolean
+  /** 是否朗读表情弹幕（默认关：表情弹幕整条不念，正文即表情名） */
+  read_emote: boolean
   /** 弹幕正文最大朗读字数（不含身份前缀与用户名，0 = 不限制） */
   max_len: number
   /** 待朗读队列上限（超出丢弃最旧的） */
@@ -273,6 +293,7 @@ export const DEFAULT_TTS_CONFIG: TtsConfig = {
   volume_pct: 0,
   read_username: false,
   read_role: false,
+  read_emote: false,
   // 15 字 ≈ 3.4s 音频；B 站弹幕上限 30–40 字（≈ 7–9s），全念完在高频房间会明显积压
   max_len: 15,
   max_queue: 5,

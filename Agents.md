@@ -49,6 +49,23 @@
 - 没有面向关注列表的开播推送长连接，只能轮询批量接口；当前不做后台轮询（手动刷新 + 登录后自动一次）
 - 「最近连接直播间」面包屑暂时隐藏：只隐藏 UI（`RoomView.vue` 的 `SHOW_RECENT_ROOMS = false`），数据、代码、持久化全部保留
 
+## 表情包（渲染 + 朗读均已上线）
+
+弹幕里的表情包看 `DANMU_MSG.info[0][13]`：有表情时是对象（`emoticon_unique` / `url` / `width` / `height` / `bulge_display`），无表情时是**字符串 `"{}"`**。解析在 `parser.rs::parse_emote` → `event::Emote`，随弹幕事件下发（渲染与朗读同一个字段）。
+
+- **判断依据不是「有没有中括号」**：`[委屈]` 这类只是全站小表情；`room_*`（UP主大表情 / 房间专属）、`official_*`（通用表情，你举的「冲鸭」`official_332`、「upup」`official_348`）、`upower_[包名_表情名]`（收藏集装扮）在正文里是**纯词、没有中括号** —— 它们全靠 `info[0][13].emoticon_unique` 非空来认（实测 147 条样本 0 例外，且表情弹幕的正文全部等于表情名）
+- 渲染在 `overlay/DanmakuRow.vue`：表情弹幕的正文**补上中括号**显示（「冲鸭」→「[冲鸭]」）—— 不拉外部图（桌面壳里图片很容易瘸：CSP 默认不只是 `'self' data:`，表情图地址又有 `http://` 与协议相对 `//` 两种形态，一失败就是破图/裸文字，不如文字好认）
+- 报文里的 `url` / `width` / `height` / `bulge` 照实解析并下发（`parser.rs::normalize_url` 把地址统一升到 `https://`），但**不用于渲染**：保留是协议建模 + 日志诊断用（日志会打 unique 与尺寸）
+- 朗读（`tts/text.rs::build_text`）：带表情字段的**整条不念**；无字段的老式小表情**剥掉 `[名字]` 只念文字**（「今天真好[花]」→ 念「今天真好」，整条都是表情则不念）；开关在「朗读 → 朗读筛选 → 朗读表情弹幕」（`TtsConfig::read_emote`，开启后两类都照常念）
+- `info[0][13]` 无表情时是字符串 `"{}"` 而不是空对象：`as_object()` 直接 None，**别当对象硬解**；图片地址必须在 Rust 侧升到 `https://`（老式小表情给协议相对 `//i0.hdslb.com/…`，通用表情「冲鸭」给的是 `http://…`）
+- 判据（`parser.rs::parse_emote`）：`info[0][13]` 能当对象解且 `emoticon_unique` 非空 → 表情，**图片地址可有可无**（早期版本要求地址非空，把没地址的表情漏成普通文字、还被朗读）
+- `info[0][13]` 无表情时是字符串 `"{}"` 而不是空对象：`as_object()` 直接 None，**别当对象硬解**；图片地址仍会归一化到 `https://`（老式小表情给协议相对 `//i0.hdslb.com/…`，通用表情「冲鸭」给的是 `http://…`）
+- 待验证：**文字 + 表情混合**弹幕（本次 147 条里没有）。若 B 站允许，`info[0][13]` 也只带一个表情对象，当前实现会整行换图 / 整条不念，会丢掉其中的文字。旁证字段：`info[0][12]`（0/1 标记）、`info[0][15].extra`（冗余副本，含 `dm_type=1`）
+- 排障：逐条弹幕 / 表情日志是 **debug 级**（`lib.rs` 里 level 默认 Info，平时不落盘、不刷屏，避免高频房把 5MB 轮转刷满、冲掉故障日志）—— 需要时把那一行临时改成 `Debug` 再复现一次；日志目录 `%LOCALAPPDATA%\com.bilidanmu.app\logs\bili-danmu.log`（关于页可一键打开）
+- 实测脚本：`Task/probe-emote.ps1`（表情清单）、`Task/probe-emote-map.ps1`（unique→名字 逐条校验）、`Task/analyze-dump.ps1`。**注意抓包抽样不可靠**（180 秒只有几十条 DANMU_MSG，容易漏掉低频形态），房间弹幕历史接口 `xlive/web-room/v1/dM/gethistory` 能直接看到自己发出去的原文，排「发出去的到底是什么」很快
+- **两类表情都要认**：① 报文带字段的（`d.emote`：`room_` / `official_` / `upower_`）；② **无字段的按正文里的 `[名字]` 片段认**（`parser.rs::strip_bracket_emotes`，重剥离不重整体匹配）。三个实测形态：连点表情拼成一条（`[比心][比心][比心]`）、文字 + 表情混在同一条（`今天真好[花]` → 只念「今天真好」）、纯表情（`[花]` → 不念）。畸形中括号（未闭合 / 内部还有 `[` / 名字为空或 > 30 字）一律不剥
+- 代价（已知且接受）：手打方括号文字（「价格[10]元」）也会被当表情剥掉
+
 ## 技术栈
 
 - 前端：Vue 3（`<script setup>`）+ Vite + TypeScript，包管理 pnpm
@@ -73,13 +90,13 @@
 - 目录结构：
   - `src/` 前端：
     - `views/` 页面（RoomView 房间、DanmakuView 弹幕、TtsView 朗读、AboutView 关于，后三者均为页内标签式）
-    - `components/` 复用组件（`LoginDialog.vue` 登录二维码弹窗、`DanmakuFilterPanel.vue` 弹幕筛选表单（显示/朗读共用）、`StatusDashboard.vue` 运行状态仪表盘、`SettingRow.vue` 设置行、`OverlayWindowPanel.vue` 弹幕窗标签页）
+    - `components/` 复用组件（`LoginDialog.vue` 登录二维码弹窗、`DanmakuFilterPanel.vue` 弹幕筛选表单（显示/朗读共用）、`StatusDashboard.vue` 运行状态仪表盘、`SettingRow.vue` 设置行、`OverlayWindowPanel.vue` 弹幕窗标签页、`SaveTip.vue` 保存/错误浮层提示（右下角，不占文档流）、`FollowingLiveRooms.vue` 关注在播一行）
     - `composables/` 逻辑（`useLogin` 登录态、`useRoomConnection` 连接与最近房间、`useTtsConfig` 朗读配置与音色列表与校验、`useSaveTip` 设置页提示、`useUpdate` 更新检查结果）
     - `overlay/OverlayApp.vue` + `overlay/DanmakuRow.vue` 悬浮层入口与单行渲染、`overlay/GiftRow.vue` 礼物行、`overlay/MetaBadges.vue` 两区共用的身份徽章列、`overlay/row-style.ts` 共用的描边计算、`sender/SenderApp.vue` 发送弹幕框入口
     - `styles/settings.css` 全局设置页样式（约束见「注意事项」）、`types/ipc.ts` IPC 类型定义、`overlay.ts` / `sender.ts` 独立入口（对应 `overlay.html` / `sender.html`）
   - `src-tauri/src/` Rust 核心：
     - `lib.rs` 组装（状态托管、窗口创建、托盘、命令注册）、`state.rs` 内存状态、`commands.rs` IPC 命令、`connection.rs` 连接与断线重连、`window.rs` 窗口辅助与发送框吸附
-    - `bilibili/`：`protocol.rs` 协议包、`parser.rs` 解压/解析、`api.rs` HTTP 接口（房间解析、弹幕配置、主播名）、`ws.rs` WebSocket 会话、`wbi.rs` 签名、`login.rs` 扫码登录、`send.rs` 发送弹幕、`live.rs` 关注在播（关注列表 + 批量开播状态）、`event.rs` 事件
+    - `bilibili/`：`protocol.rs` 协议包、`parser.rs` 解压/解析（DANMU_MSG 等命令的 JSON 解析）、`emote.rs` 表情包（报文表情字段解析 + 正文 `[名字]` 剥离）、`api.rs` HTTP 接口（房间解析、弹幕配置、主播名）、`ws.rs` WebSocket 会话、`wbi.rs` 签名、`login.rs` 扫码登录、`send.rs` 发送弹幕、`live.rs` 关注在播（关注列表 + 批量开播状态）、`event.rs` 事件
     - `tts/`：`mod.rs` 队列状态与入口钩子（`on_danmaku` / `on_backing`）、`text.rs` 筛选/清洗/组装文案（弹幕与打赏各一个组装函数）、`gift.rs` 礼物朗读的连击聚合与静默窗口、`worker.rs` 合成与播放流水线、`player.rs` winmm MCI 播放、`edge.rs` Edge TTS 协议、`edge/drm.rs` 的 `Sec-MS-GEC` 令牌生成（v2 自定义哈希）、`edge/voices.rs` 音色表、`edge/ssml.rs` SSML 构造、`edge/util.rs` 时间与编码工具
     - `config.rs` 配置读写与全局互斥、`config/types.rs` 结构体与默认值、`config/crypto.rs` DPAPI 加解密
     - `gift.rs` 礼物列表：金额门槛与连击合并（唯一判定处，前端只负责按 id 覆盖与条数上限）
@@ -107,7 +124,7 @@
 - 登录 Cookie 在 `config.rs` 的 `save_config_unlocked`（唯一写盘边界）统一 **DPAPI 加密**（`dpapi:` 前缀 + hex）落盘，加解密在 `config/crypto.rs`，读取自动解密（旧版明文无前缀兼容）：任何新增的敏感字段必须走同类加密，勿明文落盘；内存态保持明文
 - `config.rs` 读写持有全局互斥（save_* 均为 load-modify-save）：新增保存函数须沿用 `lock_cfg()` + `*_unlocked` 模式，勿在持锁时调用加锁公共入口（std Mutex 不可重入）
 - 断线自动重连在 `connection.rs` `spawn_connection`（1/2/4/…/30s 退避、10 次上限）；改连接收尾逻辑时保留取消令牌身份检查（`finish_connection`），否则旧任务会误清新连接状态
-- 发送弹幕需登录态（`bili_jct` 做 CSRF 签名，游客无 bili_jct 会报错）；发送框窗口始终吸附 Overlay 下方（`window.rs` `sync_sender_docked`），**左端与面板背景左边缘同一条线**（6px padding + `--panel-inset` 5.15em，不再对齐正文列）、**宽度取面板宽度的 50%（上限 260px）**、高度随弹幕字号缩放；右端带「穿透」开关按钮（发送框是独立窗口，穿透开启后仍可点，是关掉穿透的唯一入口）——改 Overlay 布局（容器 padding、`--role-indent` / `--panel-inset`）时须同步 `sender_layout_metrics` 里的这几个系数。弹幕窗与发送框均用 `@contextmenu.prevent` 屏蔽右键菜单
+- 发送弹幕需登录态（`bili_jct` 做 CSRF 签名，游客无 bili_jct 会报错）；发送框窗口始终吸附 Overlay 下方（`window.rs` `sync_sender_docked`），**左端与面板背景左边缘同一条线**（6px padding + `--panel-inset` 5.15em，不再对齐正文列）、**宽度取面板宽度的 50%（上限 260px）**、高度随弹幕字号缩放（`window.rs` 里 `font_size * 3.1 + 6`，要同时容下输入行与出错时才出现的提示行）；右端带「穿透」开关按钮（发送框是独立窗口，穿透开启后仍可点，是关掉穿透的唯一入口）——改 Overlay 布局（容器 padding、`--role-indent` / `--panel-inset`）时须同步 `sender_layout_metrics` 里的这几个系数。**发送框内输入文字用 0.9em**（比弹幕字号小一档）＋紧内边距：210px 的框只有约 142px 可写、约 8 个中文字；调回 1em 就只剩 6 个，连 placeholder 都会截尾——宽度是「不能挡太多游戏画面」的硬约束，要更宽得改 `SENDER_WIDTH_RATIO` / `SENDER_MAX_WIDTH`（高度从 `3.8em+8` 收到 `3.1em+6` 也是同理，省下的高度少挡一点画面）。弹幕窗与发送框均用 `@contextmenu.prevent` 屏蔽右键菜单
 - 朗读与显示是**两套独立的 `DanmakuFilter`**（`danmaku_filter` / `tts.filter`）：显示筛选在前端 Overlay 做，朗读筛选在 Rust `tts::on_danmaku` 做，改任一侧别把两者耦合成一份配置
 - `src/styles/settings.css` 是**全局样式**（无 scoped），类名是主窗口所有页面的共用契约：往里加规则前先确认不和已有页面的类名撞车（`StatusDashboard` 的 `.tip` 就因此改名 `.dashboard-tip`）；页面独有的差异项（如 `.select` 的 min-width）留在各自组件的 scoped 样式里覆盖
 - `DisplayDanmaku`（弹幕事件 + `isRoomMedal` 派生标记）定义在 `types/ipc.ts`，Overlay 列表与 `DanmakuRow` 共用

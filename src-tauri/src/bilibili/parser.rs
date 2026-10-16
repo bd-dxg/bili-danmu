@@ -4,6 +4,7 @@
 //!   → proto 0: body 即 JSON（可能为多个命令的数组）
 //!   → proto 2/3: body 是 Zlib/Brotli 压缩的嵌套包流，解压后递归拆包
 
+use crate::bilibili::emote::{parse_emote, strip_bracket_emotes};
 use crate::bilibili::event::{Backing, BackingKind, BilibiliEvent, Danmaku, Welcome, WelcomeKind};
 use crate::bilibili::protobuf;
 use crate::bilibili::protocol::{decode_stream, Packet, PROTO_BROTLI, PROTO_JSON, PROTO_ZLIB};
@@ -194,6 +195,25 @@ fn parse_danmaku(v: &serde_json::Value) -> Option<Danmaku> {
         .and_then(|v| v.as_u64())
         .map(|v| v as u32);
     let is_admin = user_info.get(2).and_then(|v| v.as_u64()).unwrap_or(0) > 0;
+    // 表情包：info[0][13]。无表情时该位是字符串 "{}"（不是空对象），故解析必须容错
+    let emote = head.and_then(|h| h.get(13)).and_then(parse_emote);
+
+    // 逐条弹幕的识别日志走 debug：日志级别是 Info，平时不落盘、不刷屏；
+    // 排查「表情弹幕没被识别/还在被念」时把 lib.rs 的 level 临时改成 Debug 即可看到
+    if let Some(e) = &emote {
+        log::debug!(
+            "[emote] 识别表情弹幕「{content}」unique={} {}x{} bulge={}",
+            e.unique,
+            e.width,
+            e.height,
+            e.bulge
+        );
+    } else {
+        let (stripped, had_emote) = strip_bracket_emotes(&content);
+        if had_emote {
+            log::debug!("[emote] 含表情弹幕「{content}」无表情字段，朗读只念「{stripped}」");
+        }
+    }
 
     Some(Danmaku {
         id,
@@ -208,6 +228,7 @@ fn parse_danmaku(v: &serde_json::Value) -> Option<Danmaku> {
         guard_level,
         wealth_level,
         is_admin,
+        emote,
     })
 }
 
@@ -602,6 +623,19 @@ mod tests {
         serde_json::json!({ "cmd": "DANMU_MSG", "info": info })
     }
 
+    /// 在标准样本上补出 `info[0][13]`（表情位）
+    ///
+    /// 测试样本的 info[0] 只有 6 位（真实报文有到 17 位），补齐到 14 位后才能写下标 13；
+    /// 中间位填字符串 `"{}"`，与真实报文里「无表情」的形态一致。
+    fn with_emote(mut v: serde_json::Value, emote: serde_json::Value) -> serde_json::Value {
+        let head = v["info"][0].as_array_mut().expect("info[0] 应为数组");
+        while head.len() < 14 {
+            head.push(serde_json::json!("{}"));
+        }
+        head[13] = emote;
+        v
+    }
+
     fn parse_danmu(v: serde_json::Value) -> Danmaku {
         let payload = v.to_string();
         let events = parse_payload(payload.as_bytes()).expect("payload 应可解析");
@@ -915,6 +949,33 @@ mod tests {
         let d = parse_danmu(sample_danmu(serde_json::json!(["数组弹幕"])));
         assert_eq!(d.content, "数组弹幕");
     }
+
+    #[test]
+    fn 表情弹幕解析出表情信息() {
+        // info[0][13] 实测形态：UP主大表情（room_，bulge_display=1，162×162）
+        let v = with_emote(
+            sample_danmu(serde_json::json!("生气")),
+            serde_json::json!({
+                "bulge_display": 1,
+                "emoticon_unique": "room_22637261_34519",
+                "height": 162,
+                "is_dynamic": 1,
+                "url": "https://i0.hdslb.com/bfs/garb/92855a2c.png",
+                "width": 162
+            }),
+        );
+        let d = parse_danmu(v);
+        let e = d.emote.expect("应解析出表情");
+        assert_eq!(e.unique, "room_22637261_34519");
+        assert_eq!(e.width, 162);
+        assert_eq!(e.height, 162);
+        assert!(e.bulge, "bulge_display=1 应标记为大表情");
+        // 正文就是表情名：不带中括号的「生气」也照样是表情弹幕
+        assert_eq!(d.content, "生气");
+    }
+
+    // 表情字段本身的边界（无字段 / 空唯一号 / 缺地址 / 地址归一化 / 正文到离）
+    // 已在 `emote.rs` 用直接调用覆盖，这里只保留一条走完整 DANMU_MSG 的集成测试
 
     #[test]
     fn 秒级时间戳不除千() {

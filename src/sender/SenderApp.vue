@@ -102,7 +102,7 @@ onUnmounted(() => {
         v-model="danmakuText"
         class="send-input"
         type="text"
-        placeholder="输入弹幕，回车发送"
+        placeholder="输入弹幕回车发送"
         maxlength="100"
         :disabled="!canSend"
         @keyup.enter="sendDanmaku" />
@@ -133,10 +133,14 @@ onUnmounted(() => {
 
 .input-row {
   display: flex;
-  align-items: center;
-  gap: 0.3em;
+  /* stretch 而非 center：两个子元素天然等高（字号/padding 一致），stretch 再上一层保险 */
+  align-items: stretch;
+  gap: 0.25em;
 }
 
+/* 输入区字号比弹幕小一档（0.9em）：发送框宽度受「不能挡太多游戏画面」约束
+   （面板宽度的 50%、上限 260px），字号 1em 时 210px 的框只放得下 6 个中文字，
+   连 placeholder 都会截尾。要再宽只能改 window.rs 的 SENDER_WIDTH_RATIO。 */
 .send-input {
   flex: 1 1 auto;
   min-width: 0;
@@ -146,8 +150,8 @@ onUnmounted(() => {
   border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 0.4em;
   color: #fff;
-  padding: 0.4em 0.6em;
-  font-size: 1em;
+  padding: 0.3em;
+  font-size: 0.9em;
   outline: none;
   user-select: text;
 }
@@ -161,20 +165,22 @@ onUnmounted(() => {
   border-radius: 0.4em;
 }
 
-/* 穿透开关：发送框是独立窗口，穿透开启后本按钮仍可点击，是「关掉穿透」的唯一入口 */
+/* 穿透开关：发送框是独立窗口，穿透开启后本按钮仍可点击，是「关掉穿透」的唯一入口。
+   字号 / 上下 padding 与 .send-input 保持一致：em 是相对自身字号的，字号小一档
+   行高框与 padding 会跟着缩，按钮就比输入框矮（0.8em 时矮 3.5px，看着不齐）。 */
 .ct-btn {
   flex: 0 0 auto;
   appearance: none;
   -webkit-appearance: none;
   cursor: pointer;
   white-space: nowrap;
-  font-size: 0.85em;
+  font-size: 0.9em;
   font-family: inherit;
   color: rgba(255, 255, 255, 0.85);
   background: rgba(0, 0, 0, 0.55);
   border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 0.4em;
-  padding: 0.4em 0.6em;
+  padding: 0.3em 0.45em;
   transition:
     background 0.12s ease,
     color 0.12s ease,

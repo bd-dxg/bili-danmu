@@ -1,46 +1,15 @@
 <script setup lang="ts">
-import { invoke } from '@tauri-apps/api/core'
-import { onMounted, ref, watch } from 'vue'
+import { onMounted } from 'vue'
 
+import FollowingLiveRooms from '../components/FollowingLiveRooms.vue'
 import StatusDashboard from '../components/StatusDashboard.vue'
 import { refreshLogin, useLogin } from '../composables/useLogin'
 import { useRoomConnection } from '../composables/useRoomConnection'
-
-import type { FollowingLive } from '../types/ipc'
 
 onMounted(refreshLogin)
 
 const { loggedIn, uid, uname, openLoginDialog, logout } = useLogin()
 const { roomId, busy, status, errorMsg, recentRooms, locked, statusText, connect, disconnect } = useRoomConnection()
-
-// 「关注在播」：只在点刷新时查（两个接口，不随页面挂载自动拉）
-const following = ref<FollowingLive[]>([])
-const followingBusy = ref(false)
-const followingErr = ref('')
-const followingLoaded = ref(false)
-
-async function loadFollowingLive() {
-  followingBusy.value = true
-  followingErr.value = ''
-  try {
-    const list = await invoke<FollowingLive[]>('list_following_live')
-    // 刷新期间退出登录：丢弃晚到的结果，避免登出后又冒出列表
-    if (!loggedIn.value) return
-    following.value = list
-    followingLoaded.value = true
-  } catch (e) {
-    if (!loggedIn.value) return
-    followingErr.value = String(e)
-  } finally {
-    followingBusy.value = false
-  }
-}
-
-// 「关注在播」：已登录时自动查一次（打开软件已是登录态 / 扫码登录成功都走这条），
-// 之后追加查询走「刷新」按钮
-watch(loggedIn, on => {
-  if (on) void loadFollowingLive()
-})
 
 // 最近连接的直播间面包屑：暂时隐藏（只隐藏 UI，数据与代码保留，改 true 即恢复）
 const SHOW_RECENT_ROOMS = false
@@ -51,10 +20,6 @@ async function handleLogout() {
     await disconnect()
   }
   await logout()
-  // 关注在播是登录态数据，退出后清掉并回到「未刷新」
-  following.value = []
-  followingLoaded.value = false
-  followingErr.value = ''
 }
 </script>
 
@@ -103,23 +68,7 @@ async function handleLogout() {
       </button>
     </div>
 
-    <div v-if="loggedIn" class="following-bar">
-      <span class="recent-label">关注在播</span>
-      <button class="link-btn" :disabled="followingBusy || !loggedIn" @click="loadFollowingLive">
-        {{ followingBusy ? '查询中…' : '刷新' }}
-      </button>
-      <span v-if="followingErr" class="error">{{ followingErr }}</span>
-      <span v-else-if="followingLoaded && !following.length" class="recent-label">（当前没有关注的主播在播）</span>
-      <button
-        v-for="f in following"
-        :key="f.uid"
-        class="crumb"
-        :title="`房间 ${f.room_id}`"
-        :disabled="busy || locked"
-        @click="connect(f.room_id)">
-        {{ f.uname }}
-      </button>
-    </div>
+    <FollowingLiveRooms :disabled="busy || locked" @connect="connect" />
 
     <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
 
@@ -267,28 +216,7 @@ h2 {
   margin-top: 10px;
 }
 
-/* 关注在播：与「最近」同形态（都是可点直连的名字行），仅上方多一条分隔线 */
-.following-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px 8px;
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
-}
-
-.following-bar .error {
-  margin: 0;
-  font-size: 14px;
-}
-
-/* 该区第一个名字紧邻刷新按钮（前面不是 .crumb），分隔符单独补一条 */
-.following-bar .crumb::before {
-  content: '›';
-  color: var(--text-faint);
-  margin-right: 8px;
-}
+/* 关注在播：见 components/FollowingLiveRooms.vue（自己带样式） */
 
 .recent-label {
   color: var(--text-faint);

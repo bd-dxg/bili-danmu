@@ -23,7 +23,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Manager};
 use tokio::sync::Notify;
-use text::{build_backing_text, build_text, build_welcome_text, clean_for_speech, matches_filter};
+use text::{build_backing_text, build_text, build_welcome_text, clean_for_speech, is_emote, matches_filter};
 
 /// 打断冷却：距上次打断不足这么久就不再作废在途音频
 /// （否则高频房间合成刚起步就被反复作废，白忙一场）
@@ -185,12 +185,24 @@ impl TtsState {
 pub fn on_danmaku(app: &AppHandle, d: &Danmaku) {
     let state = app.state::<TtsState>();
     let config = state.config.lock().unwrap();
-    if !config.enabled || !matches_filter(d, &config.filter) {
+    let enabled = config.enabled;
+    let pass = matches_filter(d, &config.filter);
+    if !enabled || !pass {
         return;
     }
     let text = build_text(d, &config);
     let max_queue = config.max_queue;
     let interrupt = config.interrupt_on_backlog;
+    // 逐条弹幕日志走 debug：日志级别是 Info，平时不落盘；排查「表情弹幕还在被念」时
+    // 把 lib.rs 的 level 临时改成 Debug 即可看到识别与朗读判定
+    if is_emote(d) {
+        log::debug!(
+            "[emote] 含表情弹幕「{}」read_emote={} → {}朗读",
+            d.content,
+            config.read_emote,
+            if text.is_empty() { "不" } else { "" }
+        );
+    }
     drop(config);
     if text.is_empty() {
         return;
