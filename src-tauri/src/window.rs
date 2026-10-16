@@ -96,7 +96,10 @@ const SENDER_MAX_WIDTH: f64 = 260.0;
 /// 缩进 = 容器 padding + 面板左边缘（--panel-inset = --role-indent − 0.35em），
 /// 落在面板背景左边缘那条线上；宽度 = 面板宽度（弹幕窗宽 − 左缩进 − 右侧 padding）的 50%，
 /// 且不超过 SENDER_MAX_WIDTH（逻辑 px）。
-/// 改 OverlayApp.vue 的 --role-indent / --panel-inset / 容器 padding 时要同步改这里。
+///
+/// 高度要同时容下输入行与出错时才出现的提示行（提示行是 v-if，不能按它不显示时的高度算）。
+/// 宽度是硬约束（不能被太多游戏画面），输入区靠 SenderApp.vue 里的字号 0.9em + 紧内边距
+/// 才放得下约 8 个中文字；想再宽只能调 SENDER_WIDTH_RATIO / SENDER_MAX_WIDTH。
 fn sender_layout_metrics(app: &AppHandle, scale: f64, overlay_width: u32) -> (u32, u32, u32) {
     let font_size = app.state::<OverlayState>().style.lock().unwrap().font_size;
     // 面板宽度用未取整的浮点算：缩进先取整会把那半个像素的误差带进宽度
@@ -107,6 +110,6 @@ fn sender_layout_metrics(app: &AppHandle, scale: f64, overlay_width: u32) -> (u3
         .min(SENDER_MAX_WIDTH * scale)
         .round() as u32)
         .max(1);
-    let h = ((font_size * 3.8 + 8.0) * scale).round() as u32;
+    let h = ((font_size * 3.1 + 6.0) * scale).round() as u32;
     (indent, w, h)
 }

@@ -102,7 +102,7 @@ onUnmounted(() => {
         v-model="danmakuText"
         class="send-input"
         type="text"
-        placeholder="输入弹幕，回车发送"
+        placeholder="输入弹幕回车发送"
         maxlength="100"
         :disabled="!canSend"
         @keyup.enter="sendDanmaku" />
@@ -134,9 +134,12 @@ onUnmounted(() => {
 .input-row {
   display: flex;
   align-items: center;
-  gap: 0.3em;
+  gap: 0.25em;
 }
 
+/* 输入区字号比弹幕小一档（0.9em）：发送框宽度受「不能挡太多游戏画面」约束
+   （面板宽度的 50%、上限 260px），字号 1em 时 210px 的框只放得下 6 个中文字，
+   连 placeholder 都会截尾。要再宽只能改 window.rs 的 SENDER_WIDTH_RATIO。 */
 .send-input {
   flex: 1 1 auto;
   min-width: 0;
@@ -146,8 +149,8 @@ onUnmounted(() => {
   border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 0.4em;
   color: #fff;
-  padding: 0.4em 0.6em;
-  font-size: 1em;
+  padding: 0.3em;
+  font-size: 0.9em;
   outline: none;
   user-select: text;
 }
@@ -168,13 +171,13 @@ onUnmounted(() => {
   -webkit-appearance: none;
   cursor: pointer;
   white-space: nowrap;
-  font-size: 0.85em;
+  font-size: 0.8em;
   font-family: inherit;
   color: rgba(255, 255, 255, 0.85);
   background: rgba(0, 0, 0, 0.55);
   border: 1px solid rgba(255, 255, 255, 0.35);
   border-radius: 0.4em;
-  padding: 0.4em 0.6em;
+  padding: 0.3em 0.45em;
   transition:
     background 0.12s ease,
     color 0.12s ease,
