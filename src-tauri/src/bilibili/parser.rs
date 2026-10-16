@@ -1,16 +1,24 @@
-//! B 站弹幕协议：消息展开（解压）与 JSON 命令解析
+//! B 站弹幕协议：消息展开（解压）与 JSON 命令分发
 //!
 //! 服务器下发链：网络帧(Op5, proto 0/2/3)
 //!   → proto 0: body 即 JSON（可能为多个命令的数组）
 //!   → proto 2/3: body 是 Zlib/Brotli 压缩的嵌套包流，解压后递归拆包
+//!
+//! 命令解析按域拆在子模块（本文件只留解压展开、`parse_payload` 分发与共用小工具）：
+//! `danmaku.rs` 弹幕 / `gift.rs` 打赏 / `welcome.rs` 欢迎。单测在本文件末尾。
 
-use crate::bilibili::emote::{parse_emote, strip_bracket_emotes};
-use crate::bilibili::event::{Backing, BackingKind, BilibiliEvent, Danmaku, Welcome, WelcomeKind};
-use crate::bilibili::protobuf;
+mod danmaku;
+mod gift;
+mod welcome;
+
+use crate::bilibili::event::BilibiliEvent;
 use crate::bilibili::protocol::{decode_stream, Packet, PROTO_BROTLI, PROTO_JSON, PROTO_ZLIB};
 use brotli_decompressor::Decompressor;
+use danmaku::parse_danmaku;
 use flate2::read::ZlibDecoder;
+use gift::{parse_combo, parse_gift, parse_gift_v2, parse_guard_buy, parse_super_chat};
 use std::io::Read;
+use welcome::{parse_entry_effect, parse_interact_word_v2, parse_like_click};
 
 /// Zlib 解压
 fn inflate_zlib(data: &[u8]) -> Result<Vec<u8>, String> {
@@ -123,334 +131,9 @@ pub fn parse_payload(bytes: &[u8]) -> Result<Vec<BilibiliEvent>, String> {
     Ok(events)
 }
 
-/// 解析 DANMU_MSG 命令 → Danmaku
-///
-/// info 数组结构（解析失败时容错返回 None，不影响主流程）：
-/// ```text
-/// info[0] = [0, mode, fontsize, color_dec, ts, random_id, ...]
-/// info[1] = 弹幕内容（字符串或 [字符串]）
-/// info[2] = [uid, uname, isadmin, ...]
-/// ```
-fn parse_danmaku(v: &serde_json::Value) -> Option<Danmaku> {
-    let info = v.get("info")?.as_array()?;
-
-    // 内容：info[1] 可能直接是字符串，也可能是单元素数组
-    let content = match info.get(1) {
-        Some(serde_json::Value::String(s)) => s.clone(),
-        Some(serde_json::Value::Array(a)) => a.first()?.as_str()?.to_string(),
-        _ => return None,
-    };
-    if content.trim().is_empty() {
-        return None;
-    }
-
-    // 用户：info[2][0]=uid, info[2][1]=uname
-    let user_info = info.get(2)?.as_array()?;
-    let uid = user_info
-        .first()
-        .and_then(|u| u.as_i64())
-        .unwrap_or(0);
-    let username = user_info.get(1).and_then(|u| u.as_str()).unwrap_or("").to_string();
-
-    // 元信息：info[0][3]=颜色, info[0][4]=时间戳(毫秒), info[0][5]=随机id
-    let head = info.first().and_then(|h| h.as_array());
-    let timestamp = head
-        .and_then(|h| h.get(4))
-        .and_then(|t| t.as_i64())
-        // B 站新版毫秒时间戳（13 位）统一转秒
-        .map(|t| if t > 10_000_000_000 { t / 1000 } else { t })
-        .unwrap_or_else(fallback_now);
-    let color = head
-        .and_then(|h| h.get(3))
-        .and_then(|c| c.as_u64())
-        .map(|c| format!("#{:06X}", c & 0xFFFFFF));
-    let random = head.and_then(|h| h.get(5)).and_then(|r| r.as_u64()).unwrap_or(0);
-
-    let id = format!("{}-{}-{}", timestamp, uid, random);
-
-    // ---- 用户身份（字段位置参考 blivedm DanmakuMessage.from_command） ----
-    // 勋章：info[3] = [等级, 勋章名, 主播名, 勋章房间id, 颜色, ...]，空数组=未佩戴
-    let (medal_level, medal_name, medal_room_id) = match info.get(3).and_then(|m| m.as_array()) {
-        Some(m) if !m.is_empty() => (
-            m.first().and_then(|v| v.as_u64()).map(|v| v as u32),
-            m.get(1).and_then(|v| v.as_str()).map(String::from),
-            m.get(3).and_then(|v| v.as_u64()).map(|v| v as u32),
-        ),
-        _ => (None, None, None),
-    };
-    // 用户等级：info[4] = [等级, ?, 等级颜色, 排名(如 ">50000"), ...]
-    let user_level = info
-        .get(4)
-        .and_then(|l| l.as_array())
-        .and_then(|a| a.first())
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32);
-    // 舰队等级：info[7]（3=舰长 2=提督 1=总督）；房管：info[2][2]
-    let guard_level = info.get(7).and_then(|v| v.as_u64()).map(|v| v as u32);
-    // 荣耀等级（全站财富等级）：info[16][0]
-    let wealth_level = info
-        .get(16)
-        .and_then(|w| w.as_array())
-        .and_then(|a| a.first())
-        .and_then(|v| v.as_u64())
-        .map(|v| v as u32);
-    let is_admin = user_info.get(2).and_then(|v| v.as_u64()).unwrap_or(0) > 0;
-    // 表情包：info[0][13]。无表情时该位是字符串 "{}"（不是空对象），故解析必须容错
-    let emote = head.and_then(|h| h.get(13)).and_then(parse_emote);
-
-    // 逐条弹幕的识别日志走 debug：日志级别是 Info，平时不落盘、不刷屏；
-    // 排查「表情弹幕没被识别/还在被念」时把 lib.rs 的 level 临时改成 Debug 即可看到
-    if let Some(e) = &emote {
-        log::debug!(
-            "[emote] 识别表情弹幕「{content}」unique={} {}x{} bulge={}",
-            e.unique,
-            e.width,
-            e.height,
-            e.bulge
-        );
-    } else {
-        let (stripped, had_emote) = strip_bracket_emotes(&content);
-        if had_emote {
-            log::debug!("[emote] 含表情弹幕「{content}」无表情字段，朗读只念「{stripped}」");
-        }
-    }
-
-    Some(Danmaku {
-        id,
-        username,
-        content,
-        timestamp,
-        color,
-        medal_level,
-        medal_name,
-        medal_room_id,
-        user_level,
-        guard_level,
-        wealth_level,
-        is_admin,
-        emote,
-    })
-}
-
-/// 解析 SEND_GIFT → Backing
-///
-/// 免费礼物（银瓜子 / 单价为 0）返回 None：没有人民币价值，进礼物列表只会刷屏，
-/// 也无法参与金额门槛计算。
-///
-/// data 字段（含具体金额口径）：
-/// ```text
-/// giftName / num / uname / uid / timestamp
-/// price      = 礼物单价（金瓜子，送盲盒时是爆出礼物的单价）
-/// total_coin = 实付总价（金瓜子）= 折后单价 x num，优先用它算金额
-/// coin_type  = 'gold' 付费 / 'silver' 免费
-/// rnd        = 服务端去重随机数（时间戳+去重 ID 或 UUID）
-/// ```
-fn parse_gift(v: &serde_json::Value) -> Option<Backing> {
-    let data = v.get("data")?;
-
-    let coin_type = data.get("coin_type").and_then(|c| c.as_str()).unwrap_or("");
-    let price = get_i64(data, "price").unwrap_or(0);
-    let total_coin = get_i64(data, "total_coin").unwrap_or(0);
-    if coin_type == "silver" || (price <= 0 && total_coin <= 0) {
-        return None;
-    }
-
-    let uid = get_i64(data, "uid").unwrap_or(0);
-    let gift_id = get_i64(data, "giftId").unwrap_or(0);
-    let num = get_u32(data, "num").unwrap_or(1).max(1);
-    // 实付总价缺失（部分礼物不下发 total_coin）时退回 单价 x 数量
-    let coin = if total_coin > 0 {
-        total_coin
-    } else {
-        price * num as i64
-    };
-    let timestamp = normalize_timestamp(get_i64(data, "timestamp").unwrap_or(0));
-    let rnd = get_str(data, "rnd").unwrap_or_default();
-
-    Some(Backing {
-        id: if rnd.is_empty() {
-            format!("gift-{timestamp}-{uid}-{gift_id}")
-        } else {
-            format!("gift-{rnd}")
-        },
-        kind: BackingKind::Gift,
-        uid,
-        username: get_str(data, "uname").unwrap_or_default(),
-        gift_name: get_str(data, "giftName").unwrap_or_default(),
-        gift_id,
-        num,
-        amount_fen: coin_to_fen(coin),
-        timestamp,
-        message: None,
-        guard_level: get_u32(data, "guard_level"),
-        wealth_level: get_u32(data, "wealth_level"),
-    })
-}
-
-/// 解析 SEND_GIFT_V2（新版礼物广播）→ 若干 Backing
-///
-/// 载荷是 base64 编码的 protobuf（字段号见 `protobuf` 模块文档），
-/// 一条消息可携带多个礼物档位；用户字段（uid / uname / 舰队）在顶层，
-/// 每个礼物档位自己带 gift_id / 数量 / 价格。
-/// 免费礼物（银瓜子 / 零价）与 SEND_GIFT 同一口径，直接丢弃。
-fn parse_gift_v2(v: &serde_json::Value) -> Vec<Backing> {
-    let Some(raw) = v
-        .get("data")
-        .and_then(|d| d.get("pb"))
-        .and_then(|p| p.as_str())
-        .and_then(protobuf::decode_base64)
-    else {
-        return Vec::new();
-    };
-    let Ok(top) = protobuf::decode(&raw) else {
-        return Vec::new();
-    };
-
-    let uid = protobuf::int(&top, 1).unwrap_or(0) as i64;
-    let username = protobuf::string(&top, 2).unwrap_or_default();
-    let guard_level = protobuf::int(&top, 5).map(|g| g as u32);
-
-    let mut out = Vec::new();
-    for item in protobuf::bytes_all(&top, 10) {
-        let Ok(f) = protobuf::decode(item) else {
-            continue;
-        };
-        let coin_type = protobuf::string(&f, 8).unwrap_or_default();
-        let price = protobuf::int(&f, 5).unwrap_or(0) as i64;
-        let total_coin = protobuf::int(&f, 7).unwrap_or(0) as i64;
-        if coin_type == "silver" || (price <= 0 && total_coin <= 0) {
-            continue;
-        }
-
-        let gift_id = protobuf::int(&f, 1).unwrap_or(0) as i64;
-        let num = protobuf::int(&f, 3).unwrap_or(1).max(1) as u32;
-        let coin = if total_coin > 0 {
-            total_coin
-        } else {
-            price * num as i64
-        };
-        let timestamp = normalize_timestamp(protobuf::int(&f, 10).unwrap_or(0) as i64);
-        let rnd = protobuf::string(&f, 12).unwrap_or_default();
-
-        out.push(Backing {
-            id: if rnd.is_empty() {
-                format!("gift-{timestamp}-{uid}-{gift_id}")
-            } else {
-                format!("gift-{rnd}")
-            },
-            kind: BackingKind::Gift,
-            uid,
-            username: username.clone(),
-            gift_name: protobuf::string(&f, 2).unwrap_or_default(),
-            gift_id,
-            num,
-            amount_fen: coin_to_fen(coin),
-            timestamp,
-            message: None,
-            guard_level,
-            // 新版广播里没有荣耀等级，礼物行的 LV 徽章会缺一档
-            wealth_level: None,
-        });
-    }
-    out
-}
-
-/// 取 `uinfo.guard.level`，0（无大航海）归一成 None
-fn guard_level_of(d: &serde_json::Value) -> Option<u32> {
-    d.pointer("/uinfo/guard/level")
-        .and_then(|x| x.as_u64())
-        .map(|l| l as u32)
-        .filter(|l| *l > 0)
-}
-
-/// 解析 INTERACT_WORD_V2（进房 / 关注 / 分享）→ Welcome
-///
-/// 载荷是 base64 的 protobuf（字段号实测得出）：1=uid、2=用户名、5=msg_type、
-/// 6=房间号、7=时间戳(秒)。msg_type：1 进入 / 2 关注 / 3 分享
-/// （2 已实测到，3 未抓到、按 B 站惯例），其余取值一律丢——宁可漏也不要张冠李戴。
-///
-/// 注意：这条事件里**没有** guard_level（60 个样本做了全字段扫描确认，
-/// 22.4.1 那个 1..33 的值是等级不是舰队），所以「只念舰长以上」不能靠进房事件，
-/// 只能靠 ENTRY_EFFECT。
-fn parse_interact_word_v2(v: &serde_json::Value) -> Option<Welcome> {
-    let raw = v
-        .get("data")?
-        .get("pb")?
-        .as_str()
-        .and_then(protobuf::decode_base64)?;
-    let f = protobuf::decode(&raw).ok()?;
-    let msg_type = protobuf::int(&f, 5)?;
-    let kind = match msg_type {
-        1 => WelcomeKind::Enter,
-        2 => WelcomeKind::Follow,
-        3 => WelcomeKind::Share,
-        _ => return None,
-    };
-    let uid = protobuf::int(&f, 1).unwrap_or(0) as i64;
-    let timestamp = normalize_timestamp(protobuf::int(&f, 7).unwrap_or(0) as i64);
-    Some(Welcome {
-        id: format!("iw-{msg_type}-{uid}-{timestamp}"),
-        kind,
-        uid,
-        username: protobuf::string(&f, 2).unwrap_or_default(),
-        timestamp,
-        guard_level: None,
-    })
-}
-
-/// 解析 LIKE_INFO_V3_CLICK（单次点赞）→ Welcome
-///
-/// 纯 JSON，不需要 protobuf。`LIKE_INFO_V3_UPDATE` 故意不解析：
-/// 它只有累计点赞总数（`click_count`），不是「事件」，单条点赞用这条就够。
-fn parse_like_click(v: &serde_json::Value) -> Option<Welcome> {
-    let d = v.get("data")?;
-    let uid = d.get("uid").and_then(|x| x.as_i64()).unwrap_or(0);
-    // 载荷里没有时间戳字段，用系统时间（同人同一秒的连点会因此合并成一条）
-    let timestamp = fallback_now();
-    Some(Welcome {
-        id: format!("like-{uid}-{timestamp}"),
-        kind: WelcomeKind::Like,
-        uid,
-        username: d
-            .get("uname")
-            .and_then(|x| x.as_str())
-            .unwrap_or_default()
-            .to_string(),
-        timestamp,
-        guard_level: guard_level_of(d),
-    })
-}
-
-/// 解析 ENTRY_EFFECT（舰长 / 提督 / 总督进场特效）→ Welcome
-///
-/// 这条**不是**只给大航海用的：荣耀等级高的普通观众进场也会触发（实测有
-/// `guard.level=0` + `wealth.level=15` 的样本），所以必须按 `guard.level>0` 过滤，
-/// 否则「上舰欢迎」会变成「高等级观众欢迎」。
-///
-/// 载荷里没有可直接用的时间戳（`trigger_time` 是 100ns 单位，且与常规时间戳不同源），
-/// 统一用系统时间。
-fn parse_entry_effect(v: &serde_json::Value) -> Option<Welcome> {
-    let d = v.get("data")?;
-    let guard_level = guard_level_of(d)?;
-    let uid = d.get("uid").and_then(|x| x.as_i64()).unwrap_or(0);
-    let timestamp = fallback_now();
-    Some(Welcome {
-        id: format!("guard-{uid}-{timestamp}"),
-        kind: WelcomeKind::GuardEnter,
-        uid,
-        username: d
-            .pointer("/uinfo/base/name")
-            .and_then(|x| x.as_str())
-            .unwrap_or_default()
-            .to_string(),
-        timestamp,
-        guard_level: Some(guard_level),
-    })
-}
-
 /// 时间戳归一化：13 位毫秒转秒，0 或缺失时用系统时间。
 /// 各命令一律走这里，避免某条路径忘了转毫秒写出错误时间。
-fn normalize_timestamp(t: i64) -> i64 {
+pub(super) fn normalize_timestamp(t: i64) -> i64 {
     if t <= 0 {
         return fallback_now();
     }
@@ -461,133 +144,28 @@ fn normalize_timestamp(t: i64) -> i64 {
     }
 }
 
-/// 解析 COMBO_SEND（连击）→ Backing
-///
-/// 只当「连击仍在继续」的信号用：数量与金额恒为 0，一律以 SEND_GIFT 为准。
-/// 连击期间两路事件同时下发，若 COMBO_SEND 也计入金额就会重复计数；
-/// 其是否携带价格字段未经实测（可用 `scripts/ws-probe.ps1` 验证后再决定是否改口径）。
-/// 字段名在不同版本里有 snake_case / camelCase 两种写法，这里都做兼容。
-fn parse_combo(v: &serde_json::Value) -> Option<Backing> {
-    let data = v.get("data")?;
-    let uid = get_i64(data, "uid").unwrap_or(0);
-    let gift_id = get_i64(data, "gift_id")
-        .or_else(|| get_i64(data, "giftId"))
-        .unwrap_or(0);
-    let timestamp = normalize_timestamp(get_i64(data, "timestamp").unwrap_or(0));
-
-    Some(Backing {
-        id: format!("combo-{timestamp}-{uid}-{gift_id}"),
-        kind: BackingKind::Combo,
-        uid,
-        username: get_str(data, "uname")
-            .or_else(|| get_str(data, "username"))
-            .unwrap_or_default(),
-        gift_name: get_str(data, "gift_name")
-            .or_else(|| get_str(data, "giftName"))
-            .unwrap_or_default(),
-        gift_id,
-        num: 0,
-        amount_fen: 0,
-        timestamp,
-        message: None,
-        guard_level: get_u32(data, "guard_level"),
-        wealth_level: get_u32(data, "wealth_level"),
-    })
-}
-
-/// 解析 SUPER_CHAT_MESSAGE → Backing
-///
-/// 注意 price 的单位是人民币元（与礼物的金瓜子不同），金额口径在此单独折算。
-fn parse_super_chat(v: &serde_json::Value) -> Option<Backing> {
-    let data = v.get("data")?;
-    let user = data.get("user_info");
-    let uid = get_i64(data, "uid").unwrap_or(0);
-    let timestamp = normalize_timestamp(get_i64(data, "start_time").unwrap_or(0));
-    let price = get_i64(data, "price").unwrap_or(0).max(0);
-
-    Some(Backing {
-        id: match get_i64(data, "id") {
-            Some(id) if id != 0 => format!("sc-{id}"),
-            _ => format!("sc-{timestamp}-{uid}"),
-        },
-        kind: BackingKind::SuperChat,
-        uid,
-        username: user
-            .and_then(|u| get_str(u, "uname"))
-            .unwrap_or_default(),
-        gift_name: "醒目留言".to_string(),
-        gift_id: get_i64(data, "gift_id").unwrap_or(0),
-        num: 1,
-        amount_fen: price as u64 * 100,
-        timestamp,
-        message: get_str(data, "message"),
-        guard_level: get_u32(data, "guard_level"),
-        wealth_level: user.and_then(|u| get_u32(u, "wealth_level")),
-    })
-}
-
-/// 解析 GUARD_BUY（上舰）→ Backing
-///
-/// price 是单价金瓜子数，与 num 相乘后折算；gift_name 在新版协议里可能不下发，
-/// 缺失时按舰队等级补名称。
-fn parse_guard_buy(v: &serde_json::Value) -> Option<Backing> {
-    let data = v.get("data")?;
-    let uid = get_i64(data, "uid").unwrap_or(0);
-    let guard_level = get_u32(data, "guard_level").unwrap_or(0);
-    let num = get_u32(data, "num").unwrap_or(1).max(1);
-    let price = get_i64(data, "price").unwrap_or(0).max(0);
-    let timestamp = normalize_timestamp(get_i64(data, "start_time").unwrap_or(0));
-
-    Some(Backing {
-        id: format!("guard-{timestamp}-{uid}-{guard_level}"),
-        kind: BackingKind::Guard,
-        uid,
-        username: get_str(data, "username")
-            .or_else(|| get_str(data, "uname"))
-            .unwrap_or_default(),
-        gift_name: get_str(data, "gift_name")
-            .unwrap_or_else(|| guard_name(guard_level).to_string()),
-        gift_id: get_i64(data, "gift_id").unwrap_or(0),
-        num,
-        amount_fen: coin_to_fen(price * num as i64),
-        timestamp,
-        message: None,
-        guard_level: Some(guard_level),
-        wealth_level: get_u32(data, "wealth_level"),
-    })
-}
-
-/// 舰队等级 → 档位名（1 总督 / 2 提督 / 3 舰长）
-fn guard_name(level: u32) -> &'static str {
-    match level {
-        1 => "总督",
-        2 => "提督",
-        _ => "舰长",
-    }
-}
-
 /// 金瓜子 → 分（1000 金瓜子 = 1 元 = 100 分）
-fn coin_to_fen(coin: i64) -> u64 {
+pub(super) fn coin_to_fen(coin: i64) -> u64 {
     (coin.max(0) as u64) / 10
 }
 
 /// 读取字符串字段（缺失或类型不符返回 None）
-fn get_str(v: &serde_json::Value, key: &str) -> Option<String> {
+pub(super) fn get_str(v: &serde_json::Value, key: &str) -> Option<String> {
     v.get(key).and_then(|x| x.as_str()).map(String::from)
 }
 
 /// 读取 u32 字段（缺失或类型不符返回 None）
-fn get_u32(v: &serde_json::Value, key: &str) -> Option<u32> {
+pub(super) fn get_u32(v: &serde_json::Value, key: &str) -> Option<u32> {
     v.get(key).and_then(|x| x.as_u64()).map(|n| n as u32)
 }
 
 /// 读取 i64 字段（缺失或类型不符返回 None）
-fn get_i64(v: &serde_json::Value, key: &str) -> Option<i64> {
+pub(super) fn get_i64(v: &serde_json::Value, key: &str) -> Option<i64> {
     v.get(key).and_then(|x| x.as_i64())
 }
 
 /// 解析字段缺失时的时间戳兜底（系统时间）
-fn fallback_now() -> i64 {
+pub(super) fn fallback_now() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
@@ -597,6 +175,11 @@ fn fallback_now() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // 下面这些符号现在只被测试用到（非测试代码里 parse_payload 只产出 BilibiliEvent），
+    // import 就放在测试模块里，避免生产构建出现 unused_imports 警告
+    use crate::bilibili::event::{Backing, BackingKind, Danmaku, Welcome, WelcomeKind};
+    use crate::bilibili::protobuf;
 
     /// 构造一份贴近 B 站真实结构的 DANMU_MSG（info 下标映射见 parse_danmaku 注释）
     fn sample_danmu(content: serde_json::Value) -> serde_json::Value {
