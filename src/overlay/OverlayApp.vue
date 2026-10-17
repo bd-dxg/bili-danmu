@@ -113,18 +113,21 @@ function welcomeText(w: WelcomeEvent): string {
     case 'like':
       return `▸ ${w.username} 点赞了直播间`
     default:
-      return `▸ ${w.username} 乘坐${GUARD_LABEL[w.guard_level ?? 0]}进入直播间`
+      // 档位是身份不是交通工具，且与朗读文案同序（「欢迎舰长 老板A 进入直播间」）：
+      // 「▸ 舰长 老板A 进入直播间」
+      return `▸ ${GUARD_LABEL[w.guard_level ?? 0]} ${w.username} 进入直播间`
   }
 }
 
 /**
  * 推送一条欢迎提示行（无用户名、不显示徽章，与系统提示行同一形态）
  *
- * 去重与限速都在 Rust 侧做完（`welcome.rs`），这里只渲染收到的行；
- * 开关关掉时 Rust 直接不广播，所以无需在前端再判一次配置。
+ * 去重与限速都在 Rust 侧做完（`welcome.rs`），这里只渲染收到的行。
+ * 同一个舰长到场会先后收到「进房」与「舰长进场」两条、**共用同一个 id**：
+ * 后到的直接覆盖原行（位置不变），否则弹幕窗会出现两条「进入直播间」。
  */
 function pushWelcome(w: WelcomeEvent) {
-  pushRow({
+  const row: DisplayDanmaku = {
     id: w.id,
     username: '',
     content: welcomeText(w),
@@ -132,7 +135,14 @@ function pushWelcome(w: WelcomeEvent) {
     is_admin: false,
     isRoomMedal: false,
     isWelcome: true,
-  })
+  }
+  const list = danmakuList.value
+  const idx = list.findIndex(d => d.id === w.id)
+  if (idx >= 0) {
+    list[idx] = row
+    return
+  }
+  pushRow(row)
 }
 
 /**
