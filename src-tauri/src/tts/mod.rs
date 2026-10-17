@@ -205,6 +205,10 @@ pub fn on_danmaku(app: &AppHandle, d: &Danmaku) {
             if text.is_empty() { "不" } else { "" }
         );
     }
+    if let Some(target) = &d.mention {
+        // @提及靠报文字段认（见 `bilibili::mention`），认错或没认出来时看这条
+        log::debug!("[mention] 提及弹幕「{}」对「{target}」→ 朗读「{text}」", d.content);
+    }
     drop(config);
     if text.is_empty() {
         return;

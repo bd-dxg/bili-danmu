@@ -77,7 +77,15 @@ pub(super) fn build_text(d: &Danmaku, config: &TtsConfig) -> String {
             out.push(' ');
         }
     }
-    if config.read_username {
+    if let Some(target) = &d.mention {
+        // @提及（B 站单独下发在 info[0][15]，见 `bilibili::mention`）：念成「发送者对被提及者说 正文」。
+        // **不看** `read_username`——缺了两边的名字就丢了「对谁说」这层意思。
+        // 两边名字同样要剔噪声字符（昵称里的 `_` 会被念成「下划线」）。
+        out.push_str(&spoken_name(&d.username));
+        out.push_str("对");
+        out.push_str(&spoken_name(target));
+        out.push_str("说 ");
+    } else if config.read_username {
         // 用户名同正文一样要剔噪声字符：昵称里的 `_` 同样会被念成「下划线」
         let name = strip_noise(&d.username);
         let name = name.trim();
@@ -195,6 +203,7 @@ mod tests {
             wealth_level: None,
             is_admin: false,
             emote: None,
+            mention: None,
         }
     }
 
@@ -330,6 +339,43 @@ mod tests {
         }
         let long = format!("[{}]", "字".repeat(40));
         assert_ne!(build_text(&danmaku(&long), &config), "", "过长的方括号文本不应被当成表情");
+    }
+
+    #[test]
+    fn 提及弹幕念成对谁说() {
+        // B 站的 @提及不在正文里，而是单独下发在 info[0][15]（见 bilibili::mention）：
+        // 实测正文只剩前导空格，名字得从字段取
+        let config = TtsConfig {
+            read_username: true,
+            ..TtsConfig::default()
+        };
+        let mut d = danmaku(" (⊙o⊙)…");
+        d.mention = Some("两米的吉三日".into());
+        assert_eq!(build_text(&d, &config), "小明对两米的吉三日说 (⊙o⊙)…");
+        // 「朗读用户名」关着也照念两边的名字：这类弹幕缺了名字就丢了「对谁说」
+        assert_eq!(build_text(&d, &TtsConfig::default()), "小明对两米的吉三日说 (⊙o⊙)…");
+        // 被提及的名字同样过噪声剔除
+        let mut noisy = danmaku("谢谢");
+        noisy.mention = Some("雨月云__".into());
+        assert_eq!(build_text(&noisy, &TtsConfig::default()), "小明对雨月云说 谢谢");
+    }
+
+    #[test]
+    fn 只提及没说话的不念() {
+        // 服务端把 @名字 从正文里剥掉了，只 @ 人不说话时正文为空：
+        // 念「小明对两米的吉三日说」是句半截话，整条跳过
+        let mut d = danmaku(" ");
+        d.mention = Some("两米的吉三日".into());
+        assert_eq!(build_text(&d, &TtsConfig::default()), "");
+    }
+
+    #[test]
+    fn 正文里手打的_at_不算提及() {
+        // 没有 reply_uname 字段就按普通弹幕照念；`@` 本身是会被念成「at」的噪声字符，清洗时剔掉
+        assert_eq!(
+            build_text(&danmaku("谢谢@某人 的礼物"), &TtsConfig::default()),
+            "谢谢某人 的礼物"
+        );
     }
 
     #[test]

@@ -38,6 +38,9 @@ pub struct Danmaku {
     /// 表情包（有值时 `content` 就是表情名）；无表情时不下发，前端按普通文本渲染
     #[serde(skip_serializing_if = "Option::is_none")]
     pub emote: Option<Emote>,
+    /// @提及的人（`info[0][15].extra.reply_uname`）：本条弹幕开头 @ 的人；没有就不下发
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mention: Option<String>,
 }
 
 /// 弹幕表情包（大表情 / 装扮表情 / 收藏集表情 / 老式小表情的统一形态）
