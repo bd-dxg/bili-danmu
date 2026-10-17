@@ -219,6 +219,16 @@ mod tests {
         v
     }
 
+    /// 在标准样本上补出 `info[0][15]`（@提及位），`extra` 用真实报文里的**二次编码 JSON 字符串**形态
+    fn with_mention(mut v: serde_json::Value, extra: &str) -> serde_json::Value {
+        let head = v["info"][0].as_array_mut().expect("info[0] 应为数组");
+        while head.len() < 16 {
+            head.push(serde_json::json!("{}"));
+        }
+        head[15] = serde_json::json!({ "extra": extra, "mode": 0, "show_player_type": 0 });
+        v
+    }
+
     fn parse_danmu(v: serde_json::Value) -> Danmaku {
         let payload = v.to_string();
         let events = parse_payload(payload.as_bytes()).expect("payload 应可解析");
@@ -581,6 +591,18 @@ mod tests {
         assert_eq!(d.username, "");
         assert_eq!(d.timestamp, 1700000123);
         assert!(!d.is_admin);
+    }
+
+    #[test]
+    fn 解析_at_提及() {
+        // 实测报文：名字不在正文里（正文只剩前导空格），单独下发在 info[0][15].extra
+        let extra = r#"{"show_reply":true,"reply_mid":437798391,"reply_uname":"两米的吉三日"}"#;
+        let v = with_mention(sample_danmu(serde_json::json!(" (⊙o⊙)…")), extra);
+        let d = parse_danmu(v);
+        assert_eq!(d.mention.as_deref(), Some("两米的吉三日"));
+        // 没有 @ 的弹幕不带该字段
+        let plain = parse_danmu(sample_danmu(serde_json::json!("普通弹幕")));
+        assert!(plain.mention.is_none());
     }
 
     #[test]

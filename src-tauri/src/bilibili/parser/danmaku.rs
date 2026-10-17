@@ -6,6 +6,7 @@
 use super::fallback_now;
 use crate::bilibili::emote::{parse_emote, strip_bracket_emotes};
 use crate::bilibili::event::Danmaku;
+use crate::bilibili::mention::parse_mention;
 
 /// 解析 DANMU_MSG 命令 → Danmaku
 ///
@@ -81,6 +82,8 @@ pub(super) fn parse_danmaku(v: &serde_json::Value) -> Option<Danmaku> {
     let is_admin = user_info.get(2).and_then(|v| v.as_u64()).unwrap_or(0) > 0;
     // 表情包：info[0][13]。无表情时该位是字符串 "{}"（不是空对象），故解析必须容错
     let emote = head.and_then(|h| h.get(13)).and_then(parse_emote);
+    // @提及：被 @ 的人单独下发在 info[0][15]，正文里没有（见 `bilibili::mention`）
+    let mention = head.and_then(|h| parse_mention(h));
 
     // 逐条弹幕的识别日志走 debug：日志级别是 Info，平时不落盘、不刷屏；
     // 排查「表情弹幕没被识别/还在被念」时把 lib.rs 的 level 临时改成 Debug 即可看到
@@ -113,5 +116,6 @@ pub(super) fn parse_danmaku(v: &serde_json::Value) -> Option<Danmaku> {
         wealth_level,
         is_admin,
         emote,
+        mention,
     })
 }

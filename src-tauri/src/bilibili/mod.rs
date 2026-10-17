@@ -5,6 +5,7 @@ pub mod emote;
 pub mod event;
 pub mod live;
 pub mod login;
+pub mod mention;
 pub mod parser;
 pub mod protobuf;
 pub mod protocol;

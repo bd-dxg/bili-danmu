@@ -44,7 +44,8 @@ const contentColor = computed(() =>
  * 收藏集 / 装扮表情的正文本身就带中括号（如 `[嘉然2.0_可爱捏]`），不能重复包裹。
  */
 const displayContent = computed(() => {
-  const text = props.d.content
+  // 有 @提及 时正文前会多一个空格（服务端剥掉名字后留下的），去掉避免双空格
+  const text = props.d.mention ? props.d.content.replace(/^\s+/, '') : props.d.content
   if (!props.d.emote) {
     return text
   }
@@ -72,6 +73,7 @@ const displayContent = computed(() => {
           {{ d.username + '：' }}
         </span>
       </template>
+      <span v-if="d.mention" class="mention" :style="{ color: overlayStyle.username_color }">@{{ d.mention }}</span>
       <span
         class="content"
         :style="{
@@ -108,5 +110,11 @@ const displayContent = computed(() => {
 .content {
   /* 颜色可能被 JS 覆盖，继承行高 */
   font-weight: 400;
+}
+
+/* @提及的人：跟随用户名颜色，与正文区分（网页版同款「@名字 正文」） */
+.mention {
+  margin-right: 0.3em;
+  font-weight: 600;
 }
 </style>

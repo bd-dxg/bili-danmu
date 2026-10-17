@@ -35,6 +35,8 @@ export interface DanmakuEvent {
   is_admin: boolean
   /** 表情包（有值时 content 即表情名，渲染成图；Rust 侧无表情不下发） */
   emote?: DanmakuEmote
+  /** @提及的人（B 站单独下发在 info[0][15]）：有值时弹幕窗显示「@名字 正文」 */
+  mention?: string
 }
 
 /**
