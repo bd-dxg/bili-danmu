@@ -200,14 +200,16 @@ export interface RecentRoom {
   uname?: string | null
 }
 
-/** 已关注且正在开播的主播（主界面「关注在播」手动刷新） */
+/** 已关注且正在开播的主播（主界面「关注在播」手动刷新；首条为登录者自己） */
 export interface FollowingLive {
   /** 主播 uid */
   uid: number
-  /** 主播昵称（取自关注列表） */
+  /** 主播昵称（取自关注列表；自己的那条前端不显示昵称） */
   uname: string
   /** 真实房间号（点击可直连） */
   room_id: number
+  /** 是否登录者本人的直播间（固定显示「我的直播间」，未开播也出现在首位） */
+  is_self: boolean
 }
 
 /** 弹幕过滤配置（Rust ↔ Vue，事件名 danmaku-filter） */

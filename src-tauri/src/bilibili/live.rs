@@ -9,6 +9,8 @@
 //! - 关注列表带现有登录 Cookie + 浏览器化请求头即可，**无需 WBI 签名、无需 buvid3**；
 //!   请求头 Referer 用 `space.bilibili.com`（关注接口所在站点）；
 //! - 批量状态接口里**没有直播间的 uid 直接不返回 key**（不是报错），按 uid 缺失跳过；
+//!   但**未开播的 uid 会正常返回**（`live_status: 0` + 真实 `room_id`）——「我的直播间」
+//!   那条就靠这一点在未开播时也能显示（`fetch_room_of_uid`，不过滤开播状态）；
 //!   带空 Cookie 也能调通，故不传登录态。
 
 use std::collections::HashMap;
@@ -27,6 +29,14 @@ pub struct FollowingLive {
     pub uname: String,
     /// 真实房间号（批量状态接口直接给真实号，点击可直连）
     pub room_id: u32,
+    /// 是否登录者本人的直播间（前端固定显示「我的直播间」）
+    pub is_self: bool,
+}
+
+/// 批量状态接口返回的单条直播间信息
+struct BatchRoom {
+    room_id: u32,
+    live_status: i64,
 }
 
 /// 拉取关注列表（uid + 昵称），按关注时间倒序，最多 [`FOLLOWING_MAX_PAGES`] 页
@@ -118,8 +128,15 @@ pub async fn fetch_live_rooms(
     let mut live = HashMap::new();
     let mut failed = 0usize;
     for chunk in &batches {
-        match fetch_live_batch(client, chunk).await {
-            Ok(batch) => live.extend(batch),
+        match fetch_batch(client, chunk).await {
+            Ok(batch) => {
+                // 未开播（live_status=0）与轮播（2）都在 data 里，只取直播中
+                for (uid, room) in batch {
+                    if room.live_status == 1 {
+                        live.insert(uid, room.room_id);
+                    }
+                }
+            }
             Err(e) => {
                 failed += 1;
                 log::warn!("[live] 开播状态批次查询失败，已跳过该批: {e}");
@@ -132,11 +149,23 @@ pub async fn fetch_live_rooms(
     Ok(live)
 }
 
-/// 查询一批 uid 的在播状态
-async fn fetch_live_batch(
+/// 查询登录者本人的直播间真实房间号（**不看开播状态**）
+///
+/// 实测（2026-11）：`get_status_info_by_uids` 对**未开播**的 uid 同样返回 key
+/// （`live_status: 0` + 真实 `room_id`），所以与在播过滤共用同一接口；
+/// 只有「没有直播间」的 uid 才不返回 key，此时返回 None。
+/// 单独查一次的代价是一个轻量请求（关注列表本来就要多次串行翻页），换取
+/// 「主播开播前先把软件连上自己的房间」这条路。查询失败只丢这一条，不拖垮整个列表。
+pub async fn fetch_room_of_uid(client: &reqwest::Client, uid: i64) -> Result<Option<u32>, String> {
+    let batch = fetch_batch(client, &[uid]).await?;
+    Ok(batch.get(&uid).map(|r| r.room_id))
+}
+
+/// 查询一批 uid 的直播间信息（未开播 / 轮播都会返回）
+async fn fetch_batch(
     client: &reqwest::Client,
     uids: &[i64],
-) -> Result<HashMap<i64, u32>, String> {
+) -> Result<HashMap<i64, BatchRoom>, String> {
     let query: Vec<(&str, String)> = uids.iter().map(|u| ("uids[]", u.to_string())).collect();
     let resp = client
         .get("https://api.live.bilibili.com/room/v1/Room/get_status_info_by_uids")
@@ -157,20 +186,24 @@ async fn fetch_live_batch(
     }
 
     // 没有直播间的 uid 不会出现在 data 里（不是报错），按缺失跳过
-    let mut live = HashMap::new();
+    let mut out = HashMap::new();
     let Some(data) = resp.get("data").and_then(|d| d.as_object()) else {
-        return Ok(live);
+        return Ok(out);
     };
     for (key, room) in data {
-        if room.get("live_status").and_then(|v| v.as_i64()) != Some(1) {
-            continue;
-        }
         let Some(room_id) = room.get("room_id").and_then(|v| v.as_u64()) else {
             continue;
         };
+        let live_status = room.get("live_status").and_then(|v| v.as_i64()).unwrap_or(0);
         if let Ok(uid) = key.parse::<i64>() {
-            live.insert(uid, room_id as u32);
+            out.insert(
+                uid,
+                BatchRoom {
+                    room_id: room_id as u32,
+                    live_status,
+                },
+            );
         }
     }
-    Ok(live)
+    Ok(out)
 }
