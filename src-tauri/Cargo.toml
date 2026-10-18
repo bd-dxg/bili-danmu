@@ -30,3 +30,10 @@ futures-util = "0.3"
 brotli-decompressor = "4"
 flate2 = "1"
 windows-sys = { version = "0.61.2", features = ["Win32_Security_Cryptography", "Win32_Foundation", "Win32_Media_Multimedia", "Win32_UI_Shell", "Win32_UI_WindowsAndMessaging"] }
+# 锁 2.12.x：上游 2.13+ 要求 tauri ^2.12，而本机 tauri 还停在 2.11.5
+# （升 tauri 会连带换掉 wry / tao，透明悬浮窗最脆，单独一个 PR 再动）
+#
+# 关掉默认的 rustls-tls / zip：rustls 会内嵌一整套根证书（二进制 +3MB），而项目
+# 其它网络代码走的就是 native-tls（系统证书库，跟系统的代理与证书设置一致）；
+# zip 只在解 Tauri v1 风格的 .zip 更新包时用得到，我们只发 NSIS .exe
+tauri-plugin-updater = { version = "~2.12", default-features = false, features = ["native-tls", "system-proxy"] }

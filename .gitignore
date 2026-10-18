@@ -10,6 +10,10 @@ src-tauri/gen/schemas/
 # 其他
 dev.log
 
+# 更新签名私钥（实际存在 %USERPROFILE%\.tauri\ 下，这里只是防手滑复制进项目的兜底）
+*.key
+*.key.pub
+
 *.local
 .DS_Store
 

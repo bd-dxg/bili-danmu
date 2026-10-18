@@ -29,6 +29,21 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"]
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://gh-proxy.org/https://github.com/bd-dxg/bili-danmu/releases/latest/download/latest.json",
+        "https://cdn.gh-proxy.org/https://github.com/bd-dxg/bili-danmu/releases/latest/download/latest.json",
+        "https://v4.gh-proxy.org/https://github.com/bd-dxg/bili-danmu/releases/latest/download/latest.json",
+        "https://github.com/bd-dxg/bili-danmu/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM5MTc2NUUwQkVCN0JDRDMKUldUVHZMZSs0R1VYeWVoTXJFQ3hGVGFGTGV3VHI4L3VKdERsUXBVZmlQR0M5SHhtVmQyQk9XbHMK",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }
