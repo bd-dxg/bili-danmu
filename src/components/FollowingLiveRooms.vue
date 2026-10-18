@@ -8,6 +8,9 @@ import type { FollowingLive } from '../types/ipc'
 
 // 「关注在播」：已关注且正在开播的主播名，点名字直连。
 //
+// 登录者自己的直播间由 Rust 排在首位（固定文案「我的直播间」，未开播也显示，
+// 便于主播开播前先把软件连上自己房间），前端不重排、只按返回顺序渲染。
+//
 // 触发时机只有两处：`loggedIn` 变 true 时自动查一次（覆盖「打开软件已是登录态」与
 // 「扫码登录成功」两条路径，同一个 watch），之后手动点「刷新」；登出时清空。
 //
@@ -73,7 +76,7 @@ watch(loggedIn, on => {
       :title="`房间 ${f.room_id}`"
       :disabled="disabled"
       @click="emit('connect', f.room_id)">
-      {{ f.uname }}
+      {{ f.is_self ? '我的直播间' : f.uname }}
     </button>
   </div>
 </template>

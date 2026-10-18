@@ -319,34 +319,64 @@ pub(crate) async fn send_danmaku(state: State<'_, AppState>, msg: String) -> Res
 }
 
 /// 查询「已关注且正在开播」的主播（主界面手动刷新；只需登录态，与当前是否已连接房间无关）
+///
+/// 自己的直播间固定排第一位（不看开播状态——主播常在开播前就把软件连上自己房间），
+/// 失败只是少这一条，不影响关注列表。
 #[tauri::command]
 pub(crate) async fn list_following_live(
     state: State<'_, AppState>,
 ) -> Result<Vec<bilibili::live::FollowingLive>, String> {
     // 关注列表接口未登录返回 -101；锁作用域内克隆，避免持锁 await
-    let (cookies, uid) = {
+    let (cookies, uid, my_uname) = {
         let auth = state.auth.lock().unwrap();
         match auth.as_ref() {
-            Some(a) => (a.cookies.clone(), a.uid),
+            Some(a) => (
+                a.cookies.clone(),
+                a.uid,
+                a.uname.clone().unwrap_or_default(),
+            ),
             None => return Err("请先扫码登录后查看关注在播".into()),
         }
     };
 
     let client = bilibili::api::http_client();
+    // 自己的直播间（真实房间号，未开播也有；没有直播间 / 查询失败则为 None）
+    let my_room = match bilibili::live::fetch_room_of_uid(&client, uid).await {
+        Ok(r) => r,
+        Err(e) => {
+            log::warn!("[live] 查询自己的直播间失败，本次不显示「我的直播间」: {e}");
+            None
+        }
+    };
     let followings = bilibili::live::fetch_followings(&client, &cookies, uid).await?;
     let uids: Vec<i64> = followings.iter().map(|(u, _)| *u).collect();
     let live = bilibili::live::fetch_live_rooms(&client, &uids).await?;
     // 昵称取自关注列表（批量状态接口也带 uname，但没必要再解析一份）
-    Ok(followings
+    let mut list: Vec<bilibili::live::FollowingLive> = followings
         .into_iter()
+        .filter(|(u, _)| *u != uid) // 万一自己出现在关注列表里，避免与「我的直播间」重复
         .filter_map(|(u, uname)| {
             live.get(&u).map(|&room_id| bilibili::live::FollowingLive {
                 uid: u,
                 uname,
                 room_id,
+                is_self: false,
             })
         })
-        .collect())
+        .collect();
+    if let Some(room_id) = my_room {
+        list.insert(
+            0,
+            bilibili::live::FollowingLive {
+                uid,
+                // 前端固定显示「我的直播间」，此字段仅作结构完整
+                uname: my_uname,
+                room_id,
+                is_self: true,
+            },
+        );
+    }
+    Ok(list)
 }
 
 /// 查询最近连接的直播间（主界面面包屑，已按最近在前排序）
