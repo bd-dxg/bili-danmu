@@ -4,7 +4,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import rewardCode from '../assets/reward-code.webp'
-import { checkUpdate, openUpdatePage, useUpdate } from '../composables/useUpdate'
+import { checkUpdate, installUpdate, openManualDownload, useUpdate } from '../composables/useUpdate'
 
 // 软件版本号：取自 Tauri 包信息（与 src-tauri/Cargo.toml / tauri.conf.json 同源），
 // 不在前端再抄一份；浏览器里跑（pnpm dev 无 Tauri 注入）时拿不到，徽章自行隐藏
@@ -46,35 +46,44 @@ async function openLogDir() {
   }
 }
 
-// ---- 版本更新提醒 ----
+// ---- 版本更新 ----
 // 结果来自模块级单例（App 启动 5s 后已静默查过一次），这里只负责展示与手动重试
-const { checking, info, error: updateError } = useUpdate()
+const { checking, installing, progress, latest, error: updateError } = useUpdate()
 
 // 只有手动点过才显示「已是最新」：启动自动检查无结果时不该多一行无用文案
 const checked = ref(false)
 
-const hasUpdate = computed(() => Boolean(info.value?.has_update))
+// 有远端版本号 = 有新版本（检查失败时会被清空，不会误报）
+const hasUpdate = computed(() => Boolean(latest.value))
 
-// 一个按钮走完「检查更新 → 检查中… → 发现新版本 / 已是最新 / 重试」全部状态：
-// 不新增一行（关于页总高已接近内容区上限，见 .reward 注释）
+// 一个按钮走完「检查更新 → 检查中… → 发现新版本 → 下载 x% → 安装中… → 已是最新 /
+// 重试」全部状态：不新增一行（关于页总高已接近内容区上限，见 .reward 注释）
 const updateLabel = computed(() => {
+  if (installing.value) return progress.value >= 100 ? '安装中…' : `下载 ${progress.value}%`
   if (checking.value) return '检查中…'
   if (updateError.value) return '重试'
-  if (hasUpdate.value) return `发现新版本 v${info.value!.latest}`
+  if (hasUpdate.value) return `发现新版本 v${latest.value}`
   return checked.value ? '已是最新' : '检查更新'
 })
 
 async function onUpdateClick() {
+  if (installing.value) return
+  // 有新版就先下载安装；下载失败后 latest 还在，再点就是重试下载
   if (hasUpdate.value) {
-    await openUpdatePage()
+    await installUpdate()
     return
   }
   checked.value = true
   await checkUpdate()
 }
 
-// 按钮提示：有新版说明点按去向，失败说明原因——两者都用 hover 提示，不占页面高度
-const updateTitle = computed(() => (hasUpdate.value ? '在浏览器打开下载页' : updateError.value))
+// 按钮提示：装得怎么样、失败是为什么——都用 hover 提示，不占页面高度
+const updateTitle = computed(() => {
+  if (updateError.value) return updateError.value
+  if (installing.value) return `正在下载 v${latest.value}`
+  if (hasUpdate.value) return '点击下载并安装（装完自动重启）'
+  return ''
+})
 
 onMounted(async () => {
   try {
@@ -97,14 +106,23 @@ onUnmounted(() => {
     <h2>
       <span>关于</span>
       <span v-if="version" class="version">v{{ version }}</span>
-      <!-- 更新提醒与版本徽章同行：关于页放不下额外一行（见 .reward 注释） -->
+      <!-- 更新提醒与版本徽章同行：关于页放不下额外一行（见 .reward 注释）。
+           有新版时右侧多一个「手动下」：自动更新失败（加速站挂掉）时的出口，
+           地址取自更新清单，自带加速站前缀 -->
       <button
         class="pill-btn"
-        :class="{ 'has-update': hasUpdate }"
-        :disabled="checking"
+        :class="{ 'has-update': hasUpdate && !installing }"
+        :disabled="checking || installing"
         :title="updateTitle"
         @click="onUpdateClick()">
         {{ updateLabel }}
+      </button>
+      <button
+        v-if="hasUpdate && !installing"
+        class="pill-btn"
+        title="用浏览器下载安装包（自动更新不可用时手动装）"
+        @click="openManualDownload()">
+        手动下
       </button>
       <!-- 日志按钮与更新徽章同行：排障时用户要能自己找到日志文件 -->
       <button

@@ -101,7 +101,7 @@
   - `src/` 前端：
     - `views/` 页面（RoomView 房间、DanmakuView 弹幕、TtsView 朗读、AboutView 关于，后三者均为页内标签式）
     - `components/` 复用组件（`LoginDialog.vue` 登录二维码弹窗、`DanmakuFilterPanel.vue` 弹幕筛选表单（显示/朗读共用）、`StatusDashboard.vue` 运行状态仪表盘、`SettingRow.vue` 设置行、`OverlayWindowPanel.vue` 弹幕窗标签页、`SaveTip.vue` 保存/错误浮层提示（右下角，不占文档流）、`FollowingLiveRooms.vue` 关注在播一行）
-    - `composables/` 逻辑（`useLogin` 登录态、`useRoomConnection` 连接与最近房间、`useTtsConfig` 朗读配置与音色列表与校验、`useSaveTip` 设置页提示、`useUpdate` 更新检查结果）
+    - `composables/` 逻辑（`useLogin` 登录态、`useRoomConnection` 连接与最近房间、`useTtsConfig` 朗读配置与音色列表与校验、`useSaveTip` 设置页提示、`useUpdate` 自动更新状态与安装流程）
     - `overlay/OverlayApp.vue` + `overlay/DanmakuRow.vue` 悬浮层入口与单行渲染、`overlay/GiftRow.vue` 礼物行、`overlay/MetaBadges.vue` 两区共用的身份徽章列、`overlay/row-style.ts` 共用的描边计算、`sender/SenderApp.vue` 发送弹幕框入口
     - `styles/settings.css` 全局设置页样式（约束见「注意事项」）、`types/ipc.ts` IPC 类型定义、`overlay.ts` / `sender.ts` 独立入口（对应 `overlay.html` / `sender.html`）
   - `src-tauri/src/` Rust 核心：
@@ -110,17 +110,29 @@
     - `tts/`：`mod.rs` 队列状态与入口钩子（`on_danmaku` / `on_backing`）、`clean.rs` 朗读前清洗（噪声字符 / 重复折叠 / 链接）、`text.rs` 筛选与组装文案（弹幕与打赏各一个组装函数）、`gift.rs` 礼物朗读的连击聚合与静默窗口、`worker.rs` 合成与播放流水线、`player.rs` winmm MCI 播放、`edge.rs` Edge TTS 协议、`edge/drm.rs` 的 `Sec-MS-GEC` 令牌生成（v2 自定义哈希）、`edge/voices.rs` 音色表、`edge/ssml.rs` SSML 构造、`edge/util.rs` 时间与编码工具
     - `config.rs` 配置读写与全局互斥、`config/types.rs` 结构体与默认值、`config/crypto.rs` DPAPI 加解密
     - `gift.rs` 礼物列表：金额门槛与连击合并（唯一判定处，前端只负责按 id 覆盖与条数上限）
-    - `update.rs` 版本更新提醒：请求 GitHub Releases 比对版本（只提醒，不下载安装）、ShellExecuteW 打开下载页
+    - `update.rs` 打开外链 / 本地目录（`ShellExecuteW`）；检查、下载、验签、安装交给 `tauri-plugin-updater`
 - 多窗口：根目录 `index.html`（主窗口）+ `overlay.html`（透明悬浮窗）+ `sender.html`（发送弹幕框），Tauri 配置见 `src-tauri/tauri.conf.json` 与 `capabilities/default.json`
 - IPC 双向类型约定：Rust command 与 `src/types/ipc.ts` 保持一致，改动协议时两端同步
 - 注释、commit 一律简体中文；PRD（`prd.md`）已停止维护（见下）
-- 功能状态与规划以 `docs/技术说明.md` 表格为准（未做项：礼物图标、滚动弹幕、顶弹、用户屏蔽、Windows 系统 TTS、全局快捷键、开机自启、自动更新）；`README.md` 只写面向用户的产品介绍，技术细节一律放 `docs/技术说明.md`；`prd.md` 仅作历史设计参考，新需求不要再往上写
+- 功能状态与规划以 `docs/技术说明.md` 表格为准（未做项：礼物图标、滚动弹幕、顶弹、用户屏蔽、Windows 系统 TTS、全局快捷键、开机自启）；`README.md` 只写面向用户的产品介绍，技术细节一律放 `docs/技术说明.md`；`prd.md` 仅作历史设计参考，新需求不要再往上写
 
 ## 版本号与发布
 
 - 禁止在 `main` 上直接开发：功能 / 修复 / 重构一律先切分支（沿用 `feature/` / `fix/` / `refactor/` 前缀，见 `git branch -a`），完成后开 PR、squash 合并回 `main`；只有版本号提升、README / 文档这类发布收尾可直接提交 `main`
 - 版本号要同步改 3 处：`package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json`；`src-tauri/Cargo.lock` 由 `cargo check` / 构建自动更新
-- 流程：改版本 → commit（`🚀 应用版本号升至 X.Y.Z（…）`）→ 推 `main` → `pnpm tauri build` → `gh release create`
+- 流程：改版本 → commit（`🚀 应用版本号升至 X.Y.Z（…）`）→ 推 `main` → `pnpm tauri build`（**必须带签名密钥，否则 updater 产物会被拒**）→ 生成 `latest.json` → `gh release create`
+
+```powershell
+$env:TAURI_SIGNING_PRIVATE_KEY = "$env:USERPROFILE\.tauri\bili-danmu.key"   # 私钥不进仓库；值是文件路径即可
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""   # 空密码也要显式设：只设上面那个，CLI 会弹密码提示并永久等输入
+pnpm tauri build
+pwsh scripts/gen-latest-json.ps1 -Version 1.7.0   # 生成 latest.json（顺带校验版本号三处已同步）
+```
+
+- 自动更新靠 `latest.json` 当端点内容，**每次发布都要把它和 exe / exe.sig 一起上传**；漏传 = 用户那边「检查更新失败」
+- 打包时必须**同时**设 `TAURI_SIGNING_PRIVATE_KEY`（私钥路径）与 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`（空密码就写空串）：只设前者时 CLI 会停在 `Decrypting updater signing key, expect a prompt for password` 等输入，表现为「构建莫名其妙卡了很久」
+- 更新走加速镜像（`gh-proxy.org` 等三个 + GitHub 直连兜底），端点写在 `src-tauri/tauri.conf.json` 的 `plugins.updater.endpoints`：**改端点要发版**，所以要增删镜像得连同版本号一起走流程
+- `tauri-plugin-updater` 的 Rust 依赖锁在 `~2.12`、npm 包锁在 `2.12.0`：上游 2.13+ 要求 tauri ^2.12，而 tauri 还停在 2.11.5（升 tauri 会连带换掉 wry / tao，悬浮窗最脆，单独一个 PR 再动）。两边版本号要一致，tauri CLI 在 build 时会校验
 - 安装包路径：`src-tauri/target/release/bundle/nsis/bili-danmu_<版本>_x64-setup.exe`
 - 打包前确认应用没在运行，否则 NSIS 写 exe 会失败
 - `gh release create` 的 tag 只建在远端，本地要 `git fetch --tags` 才看得到
@@ -149,3 +161,4 @@
 - Edge TTS 建连走 `edge.rs` 自研的 `dial_tcp`（自己解析 DNS、**IPv4 优先**、全部失败才回退 IPv6），别换回 `tokio_tungstenite::connect_async`：后者按 DNS 返回顺序连（Windows 上 IPv6 通常排前）且不会因链路劣化换地址族，国内 IPv6 直连微软偶发被 RST，现象是弹幕一路正常而朗读整段全挂（收流阶段 10054）。合成失败日志末尾带「对端 IP」就是为了区分是哪条路径出的问题
 - 合成失败必须走熔断退避（`tts/worker.rs`：连续 2 次 → 清空积压 + 1/2/4…封顶 60s）：失败是 ~0.1s 级响应、成功是 ~2s，若“失败立即重试下一条”，请求速率会瞬时飙升十倍，把服务端限流撞得更紧并自我维持（表现为持续 10054 + 20s 黑洞超时）。排查用 `cargo test --lib -- --ignored edge_burst_live --nocapture`
 - 日志一律走 `log::info!/warn!/error!`，**禁止新增 `eprintln!` / `println!`**：release 是 `windows_subsystem = "windows"`，stderr 直接丢失，排障时拿不到任何现场（`#[cfg(test)]` 里的探测打印除外）。插件配置（落盘目录 / 5MB 轮转 / 保留 7 份 / 本地时区 / dev 终端）只在 `lib.rs` 注册处一处，细节见 `docs/技术说明.md` 的「统一日志」；日志里不得出现 Cookie 凭据
+- 自动更新：检查 / 下载 / 验签 / 安装全在 `tauri-plugin-updater`，**前端不要自己拼版本比较或调 relaunch**——Windows 上插件把安装包交给 NSIS 后直接 `process::exit(0)`，由安装器（passive + `/R`）装完重启；清单端点与 minisign 公钥在 `tauri.conf.json` 的 `plugins.updater`（改端点要发版），发版必须上传 `latest.json`（`scripts/gen-latest-json.ps1`），清单里的安装包地址带加速站前缀、同时也是关于页「手动下」的开的目标；权限单独放在 `capabilities/updater.json` 且只给主窗口
