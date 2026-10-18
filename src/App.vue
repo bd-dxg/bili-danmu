@@ -1,20 +1,24 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import LoginDialog from './components/LoginDialog.vue'
 import { refreshLogin } from './composables/useLogin'
-import { checkUpdate } from './composables/useUpdate'
+import { startUpdatePolling, useUpdate } from './composables/useUpdate'
 import AboutView from './views/AboutView.vue'
 import DanmakuView from './views/DanmakuView.vue'
 import RoomView from './views/RoomView.vue'
 import StreamerView from './views/StreamerView.vue'
 import TtsView from './views/TtsView.vue'
 
+// 侧边栏红点的数据源（与关于页读的是同一个模块级单例）
+const { latest: newVersion } = useUpdate()
+const hasUpdate = computed(() => Boolean(newVersion.value))
+
 onMounted(() => {
   refreshLogin()
-  // 启动后静默查一次新版本：延后 5s 避开启动时的配置读取与连接流程；
-  // 结果不弹窗，由关于页的版本徽章展示（silent 失败不打扰）
-  setTimeout(() => checkUpdate(true), 5000)
+  // 启动 5s 后查一次 + 之后每 6 小时一次：主播常连续开播几天不重启，只查一次不够；
+  // 结果不弹窗，靠侧边栏「关于软件」红点与关于页徽章展示（silent 失败不打扰）
+  startUpdatePolling()
 })
 
 type NavKey = 'room' | 'danmaku' | 'tts' | 'streamer' | 'about'
@@ -42,6 +46,8 @@ const current = ref<NavKey>('room')
           :class="{ active: current === n.key }"
           @click="current = n.key">
           {{ n.label }}
+          <!-- 有新版本：不占行的小红点（不是「未读」，是「可更新」，点进去看过也不会消失） -->
+          <span v-if="n.key === 'about' && hasUpdate" class="nav-dot" />
         </button>
       </nav>
     </aside>
@@ -88,6 +94,8 @@ nav {
 }
 
 .nav-item {
+  /* 红点的定位基准 */
+  position: relative;
   background: none;
   border: none;
   color: var(--text-dim);
@@ -105,6 +113,18 @@ nav {
 .nav-item.active {
   background: var(--accent-soft);
   color: var(--accent-strong-text);
+}
+
+/* 有新版本的提示点：绝对定位，不撑宽也不推挤文字（侧边栏只有 150px 宽） */
+.nav-dot {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  width: 7px;
+  height: 7px;
+  margin-top: -3.5px;
+  border-radius: 50%;
+  background: var(--red);
 }
 
 .content {
