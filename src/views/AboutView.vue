@@ -48,7 +48,7 @@ async function openLogDir() {
 
 // ---- 版本更新 ----
 // 结果来自模块级单例（App 启动 5s 后已静默查过一次），这里只负责展示与手动重试
-const { checking, installing, progress, latest, error: updateError } = useUpdate()
+const { checking, installing, progress, latest, downloaded, error: updateError } = useUpdate()
 
 // 只有手动点过才显示「已是最新」：启动自动检查无结果时不该多一行无用文案
 const checked = ref(false)
@@ -80,8 +80,8 @@ async function onUpdateClick() {
 // 按钮提示：装得怎么样、失败是为什么——都用 hover 提示，不占页面高度
 const updateTitle = computed(() => {
   if (updateError.value) return updateError.value
-  if (installing.value) return `正在下载 v${latest.value}`
-  if (hasUpdate.value) return '点击下载并安装（装完自动重启）'
+  if (installing.value) return `正在安装 v${latest.value}`
+  if (hasUpdate.value) return downloaded.value ? '安装包已下好，点击安装并重启' : '点击下载并安装（装完自动重启）'
   return ''
 })
 
