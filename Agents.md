@@ -131,6 +131,7 @@ pwsh scripts/gen-latest-json.ps1 -Version 1.7.0   # 生成 latest.json（顺带�
 
 - 自动更新靠 `latest.json` 当端点内容，**每次发布都要把它和 exe / exe.sig 一起上传**；漏传 = 用户那边「检查更新失败」
 - 打包时必须**同时**设 `TAURI_SIGNING_PRIVATE_KEY`（私钥路径）与 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`（空密码就写空串）：只设前者时 CLI 会停在 `Decrypting updater signing key, expect a prompt for password` 等输入，表现为「构建莫名其妙卡了很久」
+- `@tauri-apps/cli` 必须 >= 2.12.3：只有它会在 updater 签名里写 `version` 字段，而 `requireSignedVersion` 开着时客户端靠这个字段挡降级——旧 CLI 签出的签名（没有 version）会被**直接拒绝**，现象是「下载完装不上」
 - 更新走加速镜像（`gh-proxy.org` 等三个 + GitHub 直连兜底），端点写在 `src-tauri/tauri.conf.json` 的 `plugins.updater.endpoints`：**改端点要发版**，所以要增删镜像得连同版本号一起走流程
 - `tauri-plugin-updater` 的 Rust 依赖锁在 `~2.12`、npm 包锁在 `2.12.0`：上游 2.13+ 要求 tauri ^2.12，而 tauri 还停在 2.11.5（升 tauri 会连带换掉 wry / tao，悬浮窗最脆，单独一个 PR 再动）。两边版本号要一致，tauri CLI 在 build 时会校验
 - 安装包路径：`src-tauri/target/release/bundle/nsis/bili-danmu_<版本>_x64-setup.exe`
@@ -161,4 +162,5 @@ pwsh scripts/gen-latest-json.ps1 -Version 1.7.0   # 生成 latest.json（顺带�
 - Edge TTS 建连走 `edge.rs` 自研的 `dial_tcp`（自己解析 DNS、**IPv4 优先**、全部失败才回退 IPv6），别换回 `tokio_tungstenite::connect_async`：后者按 DNS 返回顺序连（Windows 上 IPv6 通常排前）且不会因链路劣化换地址族，国内 IPv6 直连微软偶发被 RST，现象是弹幕一路正常而朗读整段全挂（收流阶段 10054）。合成失败日志末尾带「对端 IP」就是为了区分是哪条路径出的问题
 - 合成失败必须走熔断退避（`tts/worker.rs`：连续 2 次 → 清空积压 + 1/2/4…封顶 60s）：失败是 ~0.1s 级响应、成功是 ~2s，若“失败立即重试下一条”，请求速率会瞬时飙升十倍，把服务端限流撞得更紧并自我维持（表现为持续 10054 + 20s 黑洞超时）。排查用 `cargo test --lib -- --ignored edge_burst_live --nocapture`
 - 日志一律走 `log::info!/warn!/error!`，**禁止新增 `eprintln!` / `println!`**：release 是 `windows_subsystem = "windows"`，stderr 直接丢失，排障时拿不到任何现场（`#[cfg(test)]` 里的探测打印除外）。插件配置（落盘目录 / 5MB 轮转 / 保留 7 份 / 本地时区 / dev 终端）只在 `lib.rs` 注册处一处，细节见 `docs/技术说明.md` 的「统一日志」；日志里不得出现 Cookie 凭据
+- 防降级：`plugins.updater.requireSignedVersion` 开着（前提：CLI >= 2.12.3，签名里才会带 `version`）。篡改清单把「新版本号 + 旧发布包」拼在一起会被客户端拒装；`gen-latest-json.ps1` 会校验签名绑定的版本与清单一致
 - 自动更新：检查 / 下载 / 验签 / 安装全在 `tauri-plugin-updater`，**前端不要自己拼版本比较或调 relaunch**——Windows 上插件把安装包交给 NSIS 后直接 `process::exit(0)`，由安装器（passive + `/R`）装完重启；清单端点与 minisign 公钥在 `tauri.conf.json` 的 `plugins.updater`（改端点要发版），发版必须上传 `latest.json`（`scripts/gen-latest-json.ps1`），清单里的安装包地址带加速站前缀、同时也是关于页「手动下」的开的目标；权限单独放在 `capabilities/updater.json` 且只给主窗口
