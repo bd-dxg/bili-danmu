@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { getVersion } from '@tauri-apps/api/app'
 import { invoke } from '@tauri-apps/api/core'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import rewardCode from '../assets/reward-code.webp'
 import { checkUpdate, installUpdate, openManualDownload, useUpdate } from '../composables/useUpdate'
@@ -10,27 +10,24 @@ import { checkUpdate, installUpdate, openManualDownload, useUpdate } from '../co
 // 不在前端再抄一份；浏览器里跑（pnpm dev 无 Tauri 注入）时拿不到，徽章自行隐藏
 const version = ref('')
 
-// 仓库地址：页面展示短形式，复制到剪贴板的是带协议的规范 URL（浏览器能直接打开）
+// 仓库地址：页面展示短形式，点「打开」用带协议的规范 URL
 const REPO_LABEL = 'github.com/bd-dxg/bili-danmu'
 const REPO_URL = `https://${REPO_LABEL}`
 
-const copied = ref(false)
-const copyError = ref('')
-const logError = ref('')
-let tipTimer: ReturnType<typeof setTimeout> | undefined
+// 官网：唯一官方下载渠道，软件永久免费（第三方打包版收费时找不到这里就没处对账）
+const HOME_LABEL = 'danmu.bddxg.top'
+const HOME_URL = `https://${HOME_LABEL}`
 
-// 不用 <a target="_blank">：Tauri 默认不处理 WebView2 的新窗口请求（wry 会直接
-// SetHandled(true) 吞掉），链接点了没反应；剪贴板是纯 Web API，无需插件。
-async function copyRepoUrl() {
-  copyError.value = ''
+const openError = ref('')
+const logError = ref('')
+
+// 外链走 Rust 的 ShellExecuteW：<a target="_blank"> 在 WebView2 里会被 wry 吞掉，点了没反应
+async function openLink(url: string) {
+  openError.value = ''
   try {
-    await navigator.clipboard.writeText(REPO_URL)
-    copied.value = true
-    if (tipTimer) clearTimeout(tipTimer)
-    tipTimer = setTimeout(() => (copied.value = false), 1500)
-  } catch {
-    // 剪贴板被拒（罕见）：地址本身可选中，退化成手动复制
-    copyError.value = '复制失败，请手动选中地址复制'
+    await invoke('open_url', { url })
+  } catch (e) {
+    openError.value = String(e)
   }
 }
 
@@ -92,10 +89,6 @@ onMounted(async () => {
     // 拿不到版本号就不显示徽章，不影响页面其它内容
   }
 })
-
-onUnmounted(() => {
-  if (tipTimer) clearTimeout(tipTimer)
-})
 </script>
 
 <template>
@@ -140,13 +133,22 @@ onUnmounted(() => {
 
     <div class="card">
       <h3>项目地址</h3>
+      <!-- 官网排第一行：官方渠道就是它，GitHub 是同一份源码的发布页 -->
       <div class="repo-row">
-        <span class="repo-url">{{ REPO_LABEL }}</span>
-        <button class="copy-btn" @click="copyRepoUrl()">
-          {{ copied ? '✓ 已复制' : '复制' }}
-        </button>
+        <span class="repo-label">官网 · 永久免费</span>
+        <div class="repo-value">
+          <span class="repo-url">{{ HOME_LABEL }}</span>
+          <button class="row-btn" @click="openLink(HOME_URL)">打开</button>
+        </div>
       </div>
-      <p v-if="copyError" class="repo-error">{{ copyError }}</p>
+      <div class="repo-row">
+        <span class="repo-label">GitHub</span>
+        <div class="repo-value">
+          <span class="repo-url">{{ REPO_LABEL }}</span>
+          <button class="row-btn" @click="openLink(REPO_URL)">打开</button>
+        </div>
+      </div>
+      <p v-if="openError" class="repo-error">{{ openError }}</p>
       <p v-if="logError" class="repo-error">{{ logError }}</p>
     </div>
 
@@ -170,6 +172,10 @@ onUnmounted(() => {
       </div>
       <img class="reward" :src="rewardCode" alt="微信赞赏码" />
     </div>
+
+    <!-- 免费声明贴在页面最下方：GPL-3.0 允许第三方原样打包收费再分发，技术上防不住，
+         能做的是让拿到第三方打包版的用户当场知道「官方版本是免费的」 -->
+    <p class="free-note">软件免费·第三方购买·请向卖方申请退款</p>
   </div>
 </template>
 
@@ -177,7 +183,7 @@ onUnmounted(() => {
 .about-page {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 9px;
 }
 
 h2 {
@@ -237,15 +243,34 @@ h2 {
   gap: 12px;
 }
 
+/* 两行之间留一点：卡片里现在是「官网 + GitHub」两行，不加间距会贴成一块 */
+.repo-row + .repo-row {
+  margin-top: 6px;
+}
+
+.repo-label {
+  font-size: 15px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.repo-value {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
 .repo-url {
   font-size: 15px;
   color: var(--text-dim);
-  /* 全局禁了选中，这里放开：复制失败时还能手动选中 */
+  /* 全局禁了选中，这里放开：选中后能手动复制 */
   user-select: text;
   overflow-wrap: anywhere;
 }
 
-.copy-btn {
+/* 行尾动作按钮（两行都是「打开」）：职责是开外链 */
+.row-btn {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 5px 12px;
@@ -256,7 +281,7 @@ h2 {
   white-space: nowrap;
 }
 
-.copy-btn:hover {
+.row-btn:hover {
   color: var(--text);
   border-color: var(--accent);
 }
@@ -298,12 +323,14 @@ h2 {
 }
 
 /* 赞赏码：图片自带白底，加圆角描边，深色主题下不会像一块浮白。
-   这个尺寸（加上卡片 padding 共 240px）是看着页面总高定的：
-   关于页 ≈537px，内容区 ≈578px，留约 40px 余量。 */
+   尺寸（加卡片 padding 共 195px）是看着页面总高定的：默认窗口（650 高，
+   扣除标题栏与 content padding 后内容区约 618px）下不能出滚动条——
+   加了官网行与底部免费声明后原本的 220 会把内容顶到 671，这里收到 175 抵回来，
+   余出几 px 给标题栏高度差（Windows 主题不同会差 1～2px）。 */
 .reward {
   flex-shrink: 0;
-  width: 220px;
-  height: 220px;
+  width: 175px;
+  height: 175px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: #fff;
@@ -338,5 +365,17 @@ h2 {
   color: var(--accent-strong-text);
   background: var(--accent-soft);
   border-color: var(--accent);
+}
+
+/* 底部免费声明：居中一行，上方一条分隔线把它与内容分开。
+   14px 是「一眼能读到」的下限（再小就成了脚注）；高度约 30px——关于页总高
+   已贴住内容区上限（默认窗口下内容区约 618px），所以靠 .about-page 的 gap
+   收到 9px 把高度抵回来，不靠缩字号。 */
+.free-note {
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+  text-align: center;
+  color: var(--text-dim);
 }
 </style>
