@@ -48,6 +48,19 @@
 
 <p align="center">关于页：版本号、项目地址、致谢开源与赞赏码</p>
 
+## 官方下载渠道
+
+**bili-danmu 永久免费，没有付费版 / 专业版。** 只有下面两处是官方渠道：
+
+| 渠道 | 地址 |
+| --- | --- |
+| 官网 | <https://danmu.bddxg.top> |
+| GitHub Releases | <https://github.com/bd-dxg/bili-danmu/releases> |
+
+第三方网盘、公众号、软件下载站分发的安装包均非官方，可能被插入广告、捆绑或后门，也享受不到自动更新的验签保护。**如果你在别处付过钱，请先向卖方申请退款，再到官网免费获取**（软件里的「关于软件」页也能打开官网）。
+
+本项目以 GPL-3.0 授权，允许他人原样再分发（包括收费），但不允许改后闭源、也不允许去掉版权声明。遇到这类情况，欢迎到 [Issues](https://github.com/bd-dxg/bili-danmu/issues) 反馈。
+
 ## 快速开始
 
 > 只想用不想编译：到 [Releases](https://github.com/bd-dxg/bili-danmu/releases/latest) 下载安装包（`bili-danmu_x.y.z_x64-setup.exe`）双击安装即可。
